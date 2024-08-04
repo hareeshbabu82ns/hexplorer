@@ -37,7 +37,7 @@ export default function RootLayout({
           <Nav />
           <main className="flex flex-col w-full py-20 px-2 xl:px-8 m-auto min-h-screen">
             {children}
-            <Copyright />
+            {/* <Copyright /> */}
           </main>
         </ThemeProvider>
       </body>

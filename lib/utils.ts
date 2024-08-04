@@ -30,6 +30,9 @@ export function formatAgo(date: Date, lang = "en") {
     return new Intl.DateTimeFormat(lang, {
       day: "numeric",
       month: "short",
+      year: "numeric",
+      hour: "numeric",
+      minute: "numeric",
     }).format(date);
   }
 
@@ -38,6 +41,8 @@ export function formatAgo(date: Date, lang = "en") {
     day: "numeric",
     month: "short",
     year: "numeric",
+    hour: "numeric",
+    minute: "numeric",
   });
 
   // if it's last year or older -> display date, month, and year ex: 12 Nov. 2020
@@ -53,12 +58,12 @@ export function formatAgo(date: Date, lang = "en") {
 //   return `${formattedSize} ${sizes[i]}`;
 // }
 
-export function formatSize(bytes: number, decimals: number = 2): string {
+export function formatSize(bytes: number, decimals: number = 0): string {
   if (!+bytes) return "0 Byt";
 
   const k = 1024;
   const dm = decimals < 0 ? 0 : decimals;
-  const sizes = ["Byt", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", "ZiB", "YiB"];
+  const sizes = ["B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"];
 
   const i = Math.floor(Math.log(bytes) / Math.log(k));
 

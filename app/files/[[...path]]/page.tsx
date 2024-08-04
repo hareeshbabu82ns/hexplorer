@@ -2,6 +2,7 @@
 
 import SelectIcon from "@/components/Icons";
 import { SortProps, TableCard } from "@/components/TableCard";
+import { searchFiles } from "@/lib/actions/files";
 import {
   checkFileType,
   formatAgo,
@@ -15,22 +16,6 @@ import React, { useEffect, useState } from "react";
 
 type Props = {};
 
-type File = {
-  name: string;
-  path: string;
-  size: number;
-  type: string;
-  dlCount: number;
-  lastUpdate: string;
-  lastDownload: string;
-};
-
-type Data = {
-  docs: File[];
-  pageCount: number;
-  docCount: number;
-};
-
 export default function FilePage({}: Props) {
   const [filter, setFilter] = useState<string[]>([]); // unused for now
   const [search, setSearch] = useState<string>("");
@@ -38,28 +23,24 @@ export default function FilePage({}: Props) {
   const [page, setPage] = useState<number>(1);
 
   // Files
-  const [files, setFiles] = useState<Data | null>();
+  const [files, setFiles] = useState<ExploreFilePageData | null>();
   const [filesLoading, setFilesLoading] = useState(true);
   const [filesError, setFilesError] = useState();
 
-  const pathname = usePathname();
+  const pathname = usePathname().replace(/^\/files/, "");
 
   const fileHeaders = [
     {
       label: "Name",
-      display: (file: File) => (
+      display: (file: ExploreFile) => (
         <Link
           href={
             file.type === "directory"
-              ? `/${file.path}`
-              : joinHttpPaths(
-                  `${process.env.NEXT_PUBLIC_API_URL}/files/download/`,
-                  file.path
-                )
+              ? `/files/${file.path}`
+              : `/fileView/${file.path}`
           }
         >
           <div className="flex flex-row gap-2 items-center group">
-            {/* <p>{file.type === "directory" ? "📁" : "📄"}</p> */}
             <SelectIcon
               type={
                 file.type === "directory"
@@ -79,7 +60,7 @@ export default function FilePage({}: Props) {
     },
     {
       label: "Size",
-      display: (file: File) => (
+      display: (file: ExploreFile) => (
         <p className="text-xs md:text-base">
           {file.type === "directory" ? "-" : formatSize(file.size)}
         </p>
@@ -88,28 +69,19 @@ export default function FilePage({}: Props) {
     },
     {
       label: "Type",
-      display: (file: File) => (
+      display: (file: ExploreFile) => (
         <p className="text-xs md:text-base">{file.type}</p>
       ),
       sortKey: "type",
     },
     {
       label: "Last Updated",
-      display: (file: File) => (
+      display: (file: ExploreFile) => (
         <p className="text-xs md:text-base">
           {formatAgo(new Date(file.lastUpdate), "en")}
         </p>
       ),
       sortKey: "lastUpdate",
-    },
-    {
-      label: "Downloads",
-      display: (file: File) => (
-        <p className="text-xs md:text-base">
-          {file.type === "directory" ? "-" : file.dlCount}
-        </p>
-      ),
-      sortKey: "dlCount",
     },
   ];
 
@@ -138,20 +110,28 @@ export default function FilePage({}: Props) {
     const filterString = formatFilter(filter);
 
     try {
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/files?page=${page}&path=${pathname}${searchString}${sortString}${filterString}`
-        // {
-        //   credentials: "include",
-        // }
-      );
+      // const response = await fetch(
+      //   `${process.env.NEXT_PUBLIC_API_URL}/files?page=${page}&path=${pathname}${searchString}${sortString}${filterString}`
+      //   // {
+      //   //   credentials: "include",
+      //   // }
+      // );
 
-      if (!response.ok) {
-        throw new Error(
-          `Failed to fetch Files\nCode : ${response.status} ${response.statusText}`
-        );
-      }
+      // if (!response.ok) {
+      //   throw new Error(
+      //     `Failed to fetch Files\nCode : ${response.status} ${response.statusText}`
+      //   );
+      // }
 
-      const data = await response.json();
+      // const data = await response.json();
+      const data = await searchFiles({
+        search,
+        page,
+        path: pathname,
+        sortBy: sort?.key,
+        sortOrder: sort?.order,
+        filter: filterString,
+      });
       setFiles(data);
     } catch (err: any) {
       console.error("Error fetching Files:", err);
@@ -187,7 +167,7 @@ export default function FilePage({}: Props) {
         search={search}
         setSearch={setSearch}
         noData={noData}
-        parentPath={path.join(pathname, "..")}
+        parentPath={path.join("/files", pathname, "..")}
       />
     </div>
   );

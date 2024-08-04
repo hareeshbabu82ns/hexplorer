@@ -180,16 +180,18 @@ export function TableCard({
         <TableBody>
           <TableRow className="h-[50px]">
             <TableCell className="relative truncate overflow-hidden px-0.5 md:px-2 max-w-[600px]">
-              <Link href={parentPath}>
-                <div className="flex flex-row gap-2 items-center">
-                  <p>☝️</p>
-                  <div className="truncate">
-                    <p className="text-xs md:text-base text-primary">
-                      Parent Directory
-                    </p>
+              {parentPath.startsWith("/files") ? (
+                <Link href={parentPath}>
+                  <div className="flex flex-row gap-2 items-center">
+                    <p>☝️</p>
+                    <div className="truncate">
+                      <p className="text-xs md:text-base text-primary">
+                        Parent Directory
+                      </p>
+                    </div>
                   </div>
-                </div>
-              </Link>
+                </Link>
+              ) : null}
             </TableCell>
             {[...Array(headers.length - 1)].map((_, cellId) => (
               <TableCell key={cellId} className="p-1 md:p-4">

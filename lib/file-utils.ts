@@ -1,71 +1,87 @@
-import fs from "fs";
+"use server";
+
+import fs from "fs/promises";
 import path from "path";
 import crypto from "crypto";
 
 interface FileAttributes {
+  name: string;
+  ext: string;
+  isDirectory: boolean;
   lastModified: Date;
   createdDate: Date;
   size: number;
-  hash: string;
+  // hash: string;
+  files?: FileAttributes[];
 }
 
-function getFileAttributes(filePath: string): FileAttributes {
-  const stats = fs.statSync(filePath);
+async function getFileAttributes(
+  filePath: string
+): Promise<FileAttributes | undefined> {
+  const stats = await fs.stat(filePath);
+
   const lastModified = stats.mtime;
   const createdDate = stats.birthtime;
   const size = stats.size;
-  const hash = getFileHash(filePath);
-
+  // const hash = getFileHash(filePath);
   return {
-    lastModified,
-    createdDate,
+    name: path.basename(filePath),
+    ext: path.extname(filePath).split(".").pop() || "",
+    isDirectory: stats.isDirectory(),
     size,
-    hash,
+    createdDate,
+    lastModified,
+    // hash,
   };
 }
 
-function getFileHash(filePath: string): string {
-  const fileData = fs.readFileSync(filePath);
+async function getFileHash(filePath: string): Promise<string | undefined> {
+  const fileData = await fs.readFile(filePath);
   const hash = crypto.createHash("md5").update(fileData).digest("hex");
   return hash;
 }
 
-function readFilesInDirectory(
+async function readFilesInDirectory(
   directoryPath: string,
   includeSubdirectories: boolean = false
-): string[] {
-  let files: string[] = [];
+): Promise<FileAttributes[] | undefined> {
+  const files: FileAttributes[] = [];
 
-  const readDirectory = (dirPath: string) => {
-    const fileNames = fs.readdirSync(dirPath);
+  const readDirectory = async (dirPath: string) => {
+    const fileNames = await fs.readdir(dirPath);
 
-    fileNames.forEach((fileName) => {
+    for (const fileName of fileNames) {
       const filePath = path.join(dirPath, fileName);
-      const stats = fs.statSync(filePath);
+      const stats = await fs.stat(filePath);
 
-      if (stats.isDirectory() && includeSubdirectories) {
-        readDirectory(filePath);
+      // if (stats.isDirectory() && includeSubdirectories) {
+      //   await readDirectory(filePath);
+      if (stats.isDirectory()) {
+        // await readDirectory(filePath);
+        const fileAttributes = await getFileAttributes(filePath);
+        if (fileAttributes) files.push(fileAttributes);
       } else if (stats.isFile()) {
-        files.push(filePath);
+        const fileAttributes = await getFileAttributes(filePath);
+        if (fileAttributes) files.push(fileAttributes);
       }
-    });
+    }
   };
 
-  readDirectory(directoryPath);
+  await readDirectory(directoryPath);
 
   return files;
 }
 
-function createFile(filePath: string): void {
-  fs.writeFileSync(filePath, "");
+async function createFile(filePath: string) {
+  await fs.writeFile(filePath, "");
 }
 
-function moveFile(sourcePath: string, destinationPath: string): void {
-  fs.renameSync(sourcePath, destinationPath);
+async function moveFile(sourcePath: string, destinationPath: string) {
+  await fs.rename(sourcePath, destinationPath);
 }
 
-function deleteFile(filePath: string): void {
-  fs.unlinkSync(filePath);
+async function deleteFile(filePath: string) {
+  await fs.unlink(filePath);
 }
 
 export {
