@@ -7,7 +7,7 @@ YELLOW='\033[0;33m'
 NC='\033[0m' # No Color
 
 # Define docker variables
-CONTAINER_NAME="nextjs-file-explorer"
+CONTAINER_NAME="hexplorer"
 PORT=3010
 
 # Start logging

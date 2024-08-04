@@ -63,7 +63,7 @@ export default function Nav() {
         </Sheet>
 
         <div className="hidden md:flex flex-row items-center gap-4">
-          <Link href="https://github.com/neigebaie/nextjs-file-explorer">
+          <Link href="https://github.com/hareeshbabu82ns/hexplorer">
             <Button variant="outline" size="icon">
               <GithubIcon className="h-5 w-5 fill-foreground" />
             </Button>
