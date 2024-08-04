@@ -14,7 +14,10 @@ docker run -it -p 3000:3000 \
  --rm hexplorer:main
 
 # run (from registry)
+docker pull ghcr.io/hareeshbabu82ns/hexplorer:main
+
 docker run -it -p 3000:3000 \
+ --user "$(id -u):$(id -g)" \
  --volume "$(pwd)"/hexplorer:/app/data:rw \
  --rm ghcr.io/hareeshbabu82ns/hexplorer:main
 ```

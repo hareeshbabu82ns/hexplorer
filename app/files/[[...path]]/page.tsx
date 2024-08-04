@@ -3,12 +3,7 @@
 import SelectIcon from "@/components/Icons";
 import { SortProps, TableCard } from "@/components/TableCard";
 import { searchFiles } from "@/lib/actions/files";
-import {
-  checkFileType,
-  formatAgo,
-  formatSize,
-  joinHttpPaths,
-} from "@/lib/utils";
+import { checkFileType, formatAgo, formatSize } from "@/lib/utils";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import path from "path";
@@ -27,7 +22,7 @@ export default function FilePage({}: Props) {
   const [filesLoading, setFilesLoading] = useState(true);
   const [filesError, setFilesError] = useState();
 
-  const pathname = usePathname().replace(/^\/files/, "");
+  const pathname = decodeURI(usePathname().replace(/^\/files/, ""));
 
   const fileHeaders = [
     {
@@ -96,34 +91,8 @@ export default function FilePage({}: Props) {
   const fetchFiles = async () => {
     // setFilesLoading(true);
     setFilesError(undefined);
-
-    let sortString = "";
-    if (sort) {
-      sortString = `&sortBy=${sort?.key}&sortOrder=${sort?.order}`;
-    }
-
-    let searchString = "";
-    if (search) {
-      searchString = `&search=${search}`;
-    }
-
     const filterString = formatFilter(filter);
-
     try {
-      // const response = await fetch(
-      //   `${process.env.NEXT_PUBLIC_API_URL}/files?page=${page}&path=${pathname}${searchString}${sortString}${filterString}`
-      //   // {
-      //   //   credentials: "include",
-      //   // }
-      // );
-
-      // if (!response.ok) {
-      //   throw new Error(
-      //     `Failed to fetch Files\nCode : ${response.status} ${response.statusText}`
-      //   );
-      // }
-
-      // const data = await response.json();
       const data = await searchFiles({
         search,
         page,
@@ -143,12 +112,13 @@ export default function FilePage({}: Props) {
 
   useEffect(() => {
     fetchFiles();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sort, page, search, filter]);
 
   const noData = (
     <div className="flex flex-row gap-2 mt-4">
       <div className="flex flex-col gap-2 px-2">
-        <p>Pas de fichiers</p>
+        <p>No Files</p>
       </div>
     </div>
   );

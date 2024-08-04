@@ -9,9 +9,9 @@ export const searchFiles = async (
 ): Promise<ExploreFilePageData | undefined> => {
   try {
     const basePath = path.join(config.dataFolder, params.path);
-    console.log({ params, basePath });
+    // console.log({ params, basePath });
     const files = await readFilesInDirectory(basePath);
-    // console.log(params, basePath, files);
+    // console.log({ files });
 
     return {
       docs:

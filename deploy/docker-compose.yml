@@ -1,0 +1,24 @@
+version: "3"
+
+services:
+  docmost:
+    image: ghcr.io/hareeshbabu82ns/hexplorer:main
+    container_name: hexplorer
+    user: "1026:100"
+    environment:
+      #APP_URL: 'http://192.168.86.10:32010'
+      APP_URL: "http://hexplorer.local"
+      APP_SECRET: "3333xxx3333"
+    ports:
+      - "43001:3000"
+    restart: unless-stopped
+    volumes:
+      - data:/app/data
+
+volumes:
+  data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /volume1/books/Edu
