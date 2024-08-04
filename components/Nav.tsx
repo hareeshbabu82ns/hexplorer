@@ -5,7 +5,7 @@ import Image from "next/image";
 import React, { useState } from "react";
 import { usePathname } from "next/navigation";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { Menu } from "lucide-react";
+import { CogIcon, Menu } from "lucide-react";
 import { ModeToggle } from "./ui/toggle-mode";
 import BreadcrumbsPath from "./BreadcrumbsPath";
 import { GithubIcon } from "./Icons";
@@ -63,6 +63,11 @@ export default function Nav() {
         </Sheet>
 
         <div className="hidden md:flex flex-row items-center gap-4">
+          <Link href="/settings">
+            <Button variant="outline" size="icon">
+              <CogIcon className="h-5 w-5" />
+            </Button>
+          </Link>
           <Link href="https://github.com/hareeshbabu82ns/hexplorer">
             <Button variant="outline" size="icon">
               <GithubIcon className="h-5 w-5 fill-foreground" />
