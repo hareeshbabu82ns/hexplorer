@@ -13,7 +13,7 @@ COPY package.json package-lock.json ./
 
 # Install project dependencies using pnpm.
 # RUN pnpm install
-RUN npm install --only=prod
+RUN npm install
 
 # Copy the rest of the application code.
 COPY . .
