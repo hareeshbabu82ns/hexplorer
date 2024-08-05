@@ -1,18 +1,26 @@
-import type { Metadata } from "next";
+import { Metadata } from "next";
 import "./globals.css";
-import { Inter as FontSans } from "next/font/google";
+import { fontSans } from "@/lib/fonts";
 import { ThemeProvider } from "@/components/ui/theme-provider";
 import { cn } from "@/lib/utils";
-
-const fontSans = FontSans({
-  subsets: ["latin"],
-  variable: "--font-sans",
-});
+import { siteConfig } from "@/config/site";
+import { SiteHeader } from "@/components/site-header";
 
 export const metadata: Metadata = {
-  metadataBase: new URL("http://hexplorer.local.terabits.io/"),
-  title: "Hexplorer",
-  description: "Hexplorer is a tool for exploring files",
+  title: {
+    default: siteConfig.name,
+    template: `%s - ${siteConfig.name}`,
+  },
+  description: siteConfig.description,
+  // themeColor: [
+  //   { media: "(prefers-color-scheme: light)", color: "white" },
+  //   { media: "(prefers-color-scheme: dark)", color: "black" },
+  // ],
+  icons: {
+    icon: "/favicon.ico",
+    shortcut: "/favicon-16x16.png",
+    apple: "/apple-touch-icon.png",
+  },
 };
 
 export default function RootLayout({
@@ -21,18 +29,21 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <head>
-        <link rel="icon" href="/favicon.ico" />
-      </head>
-      <body className={cn("min-h-screen antialiased", fontSans.className)}>
+    <html lang="en" suppressHydrationWarning>
+      <head />
+      <body
+        className={cn("min-h-screen font-sans antialiased", fontSans.variable)}
+      >
         <ThemeProvider
           attribute="class"
           defaultTheme="system"
           enableSystem
           disableTransitionOnChange
         >
-          {children}
+          <div className="relative flex min-h-screen flex-col">
+            <SiteHeader />
+            <div className="flex-1">{children}</div>
+          </div>
           {/* <Copyright /> */}
         </ThemeProvider>
       </body>

@@ -31,7 +31,7 @@ export default function BreadcrumbsPath({ customLabels }: Props) {
       <BreadcrumbList>
         <BreadcrumbItem>
           {pathname === "" ? (
-            <span className="text-white font-bold">Home</span>
+            <span className="font-bold text-white">Home</span>
           ) : (
             <BreadcrumbLink href="/files/">Home</BreadcrumbLink>
           )}
@@ -41,7 +41,7 @@ export default function BreadcrumbsPath({ customLabels }: Props) {
             <BreadcrumbSeparator />
             <BreadcrumbItem>
               {index === breadcrumbs.length - 1 ? (
-                <span className="text-white font-bold">
+                <span className="font-bold text-white">
                   {(customLabels && customLabels[breadcrumb.segment]) ||
                     decodeURIComponent(breadcrumb.segment)}
                 </span>

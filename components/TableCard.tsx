@@ -124,10 +124,10 @@ export function TableCard({
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="items-center min-w-0 px-4 flex-row flex w-full h-10 rounded-md border border-input text-sm disabled:cursor-not-allowed disabled:opacity-50">
-        <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+      <div className="border-input flex h-10 w-full min-w-0 flex-row items-center rounded-md border px-4 text-sm disabled:cursor-not-allowed disabled:opacity-50">
+        <Search className="text-muted-foreground size-4 shrink-0" />
         <input
-          className="w-full placeholder:text-muted-foreground bg-transparent h-10 px-3 py-2 ring-offset-background focus-visible:outline-none focus-visible:ring-0"
+          className="placeholder:text-muted-foreground ring-offset-background h-10 w-full bg-transparent px-3 py-2 focus-visible:outline-none focus-visible:ring-0"
           placeholder={inputPlaceholder}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -136,7 +136,7 @@ export function TableCard({
 
       <Table>
         <TableHeader>
-          <TableRow className="rounded-sm hover:bg-transparent min-w-0">
+          <TableRow className="min-w-0 rounded-sm hover:bg-transparent">
             {headers &&
               headers.map((header: Header, id: number) => (
                 <TableHead
@@ -159,17 +159,17 @@ export function TableCard({
                         });
                     }
                   }}
-                  className="text-xs lg:text-sm p-1 md:p-4 cursor-pointer hover:bg-muted/60 min-w-0 truncate"
+                  className="hover:bg-muted/60 min-w-0 cursor-pointer truncate p-1 text-xs md:p-4 lg:text-sm"
                 >
-                  <div className="flex flex-row gap-2 items-center">
+                  <div className="flex flex-row items-center gap-2">
                     <p>{header.label}</p>
                     <div className="w-4">
                       {sort &&
                         sort.key === header.sortKey &&
                         (sort?.order === "asc" ? (
-                          <ArrowDown className="h-4 w-4" />
+                          <ArrowDown className="size-4" />
                         ) : (
-                          <ArrowUp className="h-4 w-4" />
+                          <ArrowUp className="size-4" />
                         ))}
                     </div>
                   </div>
@@ -179,13 +179,13 @@ export function TableCard({
         </TableHeader>
         <TableBody>
           <TableRow className="h-[50px]">
-            <TableCell className="relative truncate overflow-hidden px-0.5 md:px-2 max-w-[600px]">
+            <TableCell className="relative max-w-[600px] overflow-hidden truncate px-0.5 md:px-2">
               {parentPath.startsWith("/files") ? (
                 <Link href={parentPath}>
-                  <div className="flex flex-row gap-2 items-center">
+                  <div className="flex flex-row items-center gap-2">
                     <p>☝️</p>
                     <div className="truncate">
-                      <p className="text-xs md:text-base text-primary">
+                      <p className="text-primary text-xs md:text-base">
                         Parent Directory
                       </p>
                     </div>
@@ -204,7 +204,7 @@ export function TableCard({
               <TableRow key={index} className="h-[50px]">
                 {[...Array(headers.length)].map((_, cellId) => (
                   <TableCell key={cellId} className="p-1 md:p-4">
-                    <Skeleton className="w-full h-[20px] rounded-sm min-w-5" />
+                    <Skeleton className="h-[20px] w-full min-w-5 rounded-sm" />
                   </TableCell>
                 ))}
               </TableRow>
@@ -215,7 +215,7 @@ export function TableCard({
               <TableRow key={rowId} className="group">
                 {headers.map((_: any, cellId: number) => (
                   <TableCell
-                    className="relative truncate overflow-hidden px-1 md:px-2 lg:max-w-[600px]"
+                    className="relative overflow-hidden truncate px-1 md:px-2 lg:max-w-[600px]"
                     key={cellId}
                   >
                     {headers[cellId].display && headers[cellId].display(row)}
@@ -227,7 +227,7 @@ export function TableCard({
       </Table>
 
       {!loading && data && data.docCount === 0 && (
-        <div className="flex items-center w-full justify-center my-6">
+        <div className="my-6 flex w-full items-center justify-center">
           {noData}
         </div>
       )}

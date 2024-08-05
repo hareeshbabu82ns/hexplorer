@@ -35,7 +35,7 @@ export default function FilePage({}: Props) {
               : `/fileView/${file.path}`
           }
         >
-          <div className="flex flex-row gap-2 items-center group">
+          <div className="group flex flex-row items-center gap-2">
             <SelectIcon
               type={
                 file.type === "directory"
@@ -44,7 +44,7 @@ export default function FilePage({}: Props) {
               }
             />
             <div className="truncate">
-              <p className="text-xs md:text-base group-hover:animate-slide">
+              <p className="group-hover:animate-slide text-xs md:text-base">
                 {file.name}
               </p>
             </div>
@@ -116,7 +116,7 @@ export default function FilePage({}: Props) {
   }, [sort, page, search, filter]);
 
   const noData = (
-    <div className="flex flex-row gap-2 mt-4">
+    <div className="mt-4 flex flex-row gap-2">
       <div className="flex flex-col gap-2 px-2">
         <p>No Files</p>
       </div>

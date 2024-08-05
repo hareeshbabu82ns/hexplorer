@@ -1,4 +1,4 @@
-import Nav from "@/components/Nav";
+import Nav from "./Nav";
 import { Metadata } from "next";
 
 export const metadata: Metadata = {
@@ -14,7 +14,7 @@ export default function Layout({
   return (
     <>
       <Nav />
-      <main className="flex flex-col w-full py-20 px-2 xl:px-8 m-auto min-h-screen">
+      <main className="m-auto flex w-full flex-col px-2 py-20 xl:px-8">
         {children}
       </main>
     </>
