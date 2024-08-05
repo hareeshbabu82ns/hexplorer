@@ -23,7 +23,7 @@ export function SiteHeader() {
                 <span className="sr-only">GitHub</span>
               </Button>
             </Link>
-            <Link
+            {/* <Link
               href={siteConfig.links.twitter}
               target="_blank"
               rel="noreferrer"
@@ -32,8 +32,7 @@ export function SiteHeader() {
                 <Icons.twitter className="size-4 fill-current" />
                 <span className="sr-only">Twitter</span>
               </Button>
-            </Link>
-            <ModeToggle />
+            </Link> */}
           </nav>
         </div>
       </div>

@@ -1,10 +1,10 @@
 import { Metadata } from "next";
 import "./globals.css";
 import { fontSans } from "@/lib/fonts";
-import { ThemeProvider } from "@/components/ui/theme-provider";
 import { cn } from "@/lib/utils";
 import { siteConfig } from "@/config/site";
 import { SiteHeader } from "@/components/site-header";
+import { ThemeProvider } from "@/components/providers";
 
 export const metadata: Metadata = {
   title: {
