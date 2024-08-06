@@ -2,6 +2,7 @@
 
 import SelectIcon from "@/components/Icons";
 import { SortProps, TableCard } from "@/components/TableCard";
+import useDebounceCallback from "@/hooks/use-debounce-callback";
 import { searchFiles } from "@/lib/actions/files";
 import { checkFileType, formatAgo, formatSize } from "@/lib/utils";
 import Link from "next/link";
@@ -14,8 +15,13 @@ type Props = {};
 export default function FilePage({}: Props) {
   const [filter, setFilter] = useState<string[]>([]); // unused for now
   const [search, setSearch] = useState<string>("");
+  const [debouncedSearch, setDebouncedSearch] = useState<string>("");
   const [sort, setSort] = useState<SortProps | undefined>();
   const [page, setPage] = useState<number>(1);
+
+  const debouncedSearchFn = useDebounceCallback(setDebouncedSearch, {
+    delay: 1000,
+  });
 
   // Files
   const [files, setFiles] = useState<ExploreFilePageData | null>();
@@ -73,10 +79,10 @@ export default function FilePage({}: Props) {
       label: "Last Updated",
       display: (file: ExploreFile) => (
         <p className="text-xs md:text-base">
-          {formatAgo(new Date(file.lastUpdate), "en")}
+          {formatAgo(new Date(file.modifiedDate), "en")}
         </p>
       ),
-      sortKey: "lastUpdate",
+      sortKey: "modifiedDate",
     },
   ];
 
@@ -101,6 +107,7 @@ export default function FilePage({}: Props) {
         sortOrder: sort?.order,
         filter: filterString,
       });
+      // console.log("Files:", data);
       setFiles(data);
     } catch (err: any) {
       console.error("Error fetching Files:", err);
@@ -113,7 +120,7 @@ export default function FilePage({}: Props) {
   useEffect(() => {
     fetchFiles();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sort, page, search, filter]);
+  }, [sort, page, debouncedSearch, filter]);
 
   const noData = (
     <div className="mt-4 flex flex-row gap-2">
@@ -135,7 +142,10 @@ export default function FilePage({}: Props) {
         page={page}
         setPage={setPage}
         search={search}
-        setSearch={setSearch}
+        setSearch={(s: string) => {
+          setSearch(s);
+          debouncedSearchFn(s);
+        }}
         noData={noData}
         parentPath={path.join("/files", pathname, "..")}
       />

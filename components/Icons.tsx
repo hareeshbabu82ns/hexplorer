@@ -1,5 +1,6 @@
 import {
   CogIcon,
+  FolderSyncIcon,
   LucideProps,
   MenuIcon,
   Moon,
@@ -14,6 +15,7 @@ export const Icons = {
   moon: Moon,
   settings: CogIcon,
   menu: MenuIcon,
+  sync: FolderSyncIcon,
   twitter: (props: LucideProps) => (
     <svg
       {...props}

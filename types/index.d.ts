@@ -15,7 +15,7 @@ type ExploreFile = {
   path: string;
   size: number;
   type: string;
-  lastUpdate: string;
+  modifiedDate: string;
 };
 
 type ExploreFilePageData = {

@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/table";
 import { Search, ArrowUp, ArrowDown } from "lucide-react";
 import Link from "next/link";
+import { Input } from "./ui/input";
 
 type Props = {
   data: Data | undefined | null;
@@ -129,6 +130,7 @@ export function TableCard({
         <input
           className="placeholder:text-muted-foreground ring-offset-background h-10 w-full bg-transparent px-3 py-2 focus-visible:outline-none focus-visible:ring-0"
           placeholder={inputPlaceholder}
+          type="search"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />

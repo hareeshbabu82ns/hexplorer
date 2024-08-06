@@ -41,6 +41,20 @@ export const permissionsAllAny: string[] = [
   'update("any")',
 ];
 
+export type AppwriteInitDBField = {
+  key: string;
+  type: AppwriteInitDBFieldType;
+  required?: boolean;
+  default?: string;
+  size?: number;
+  array?: boolean;
+  options?: string[];
+  relation?: string;
+  elements?: string[];
+  min?: number;
+  max?: number;
+};
+
 export const DB_INIT = {
   db: {
     id: HEXPLORER_DB_ID!,
@@ -79,7 +93,12 @@ export const DB_INIT = {
           type: AppwriteInitDBFieldType.INTEGER,
           default: "0",
         },
-      ],
+        {
+          key: "isDirectory",
+          type: AppwriteInitDBFieldType.BOOLEAN,
+          default: "false",
+        },
+      ] as AppwriteInitDBField[],
     },
   ],
 };

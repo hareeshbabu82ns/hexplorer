@@ -7,6 +7,7 @@ import crypto from "crypto";
 interface FileAttributes {
   name: string;
   ext: string;
+  path: string;
   isDirectory: boolean;
   lastModified: Date;
   createdDate: Date;
@@ -16,7 +17,7 @@ interface FileAttributes {
 }
 
 async function getFileAttributes(
-  filePath: string
+  filePath: string,
 ): Promise<FileAttributes | undefined> {
   const stats = await fs.stat(filePath);
 
@@ -26,6 +27,7 @@ async function getFileAttributes(
   // const hash = getFileHash(filePath);
   return {
     name: path.basename(filePath),
+    path: path.dirname(filePath),
     ext: path.extname(filePath).split(".").pop() || "",
     isDirectory: stats.isDirectory(),
     size,
@@ -43,7 +45,7 @@ async function getFileHash(filePath: string): Promise<string | undefined> {
 
 async function readFilesInDirectory(
   directoryPath: string,
-  includeSubdirectories: boolean = false
+  includeSubdirectories: boolean = false,
 ): Promise<FileAttributes[] | undefined> {
   const files: FileAttributes[] = [];
 

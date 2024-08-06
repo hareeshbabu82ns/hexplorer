@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { usePathname } from "next/navigation";
 import BreadcrumbsPath from "../../components/BreadcrumbsPath";
+import ResyncFilesButton from "./components/resync-files-button";
 
 export default function Nav() {
   return (
@@ -19,6 +20,7 @@ export default function Nav() {
 
       <div className="flex flex-row items-center gap-4">
         {/* right actions */}
+        <ResyncFilesButton />
       </div>
     </nav>
   );

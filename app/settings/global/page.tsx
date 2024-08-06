@@ -1,4 +1,5 @@
 import { Separator } from "@/components/ui/separator";
+import InitDBButton from "./components/init-db-button";
 
 export default function SettingsAppearancePage() {
   return (
@@ -10,6 +11,7 @@ export default function SettingsAppearancePage() {
         </p>
       </div>
       <Separator />
+      <InitDBButton />
     </div>
   );
 }
