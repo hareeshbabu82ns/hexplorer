@@ -40,6 +40,7 @@ export default function FilePage({}: Props) {
               ? `/files/${file.path}`
               : `/fileView/${file.path}`
           }
+          prefetch={false}
         >
           <div className="group flex flex-row items-center gap-2">
             <SelectIcon

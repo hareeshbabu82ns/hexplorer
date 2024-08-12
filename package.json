@@ -6,10 +6,14 @@
     "dev": "next dev --turbo",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "db:gen": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:studio": "prisma studio"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",
+    "@prisma/client": "^5.18.0",
     "@radix-ui/react-accordion": "^1.2.0",
     "@radix-ui/react-alert-dialog": "^1.1.1",
     "@radix-ui/react-aspect-ratio": "^1.1.0",
@@ -75,6 +79,7 @@
     "eslint-plugin-tailwindcss": "^3.17.4",
     "postcss": "^8",
     "prettier": "^3.3.3",
+    "prisma": "^5.18.0",
     "tailwindcss": "^3.4.1",
     "typescript": "^5"
   }

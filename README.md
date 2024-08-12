@@ -22,6 +22,23 @@ docker run -it -p 3000:3000 \
  --rm ghcr.io/hareeshbabu82ns/hexplorer:main
 ```
 
+### commit with tags
+
+```sh
+git add .
+git commit -m "update instructions"
+git push origin main
+
+# push single tag
+git tag -a v1.0.0 -m "tag instructions"
+git push origin v1.0.0
+
+# push multiple tags
+git tag -a v1.0.0 -m "tag instructions"
+git tag -a v1 -m "tag instructions"
+git push origin --tags
+```
+
 ## Prerequisites
 
 - **Docker**: Make sure you have Docker installed on your system. You can download Docker from [Docker's official website](https://www.docker.com/get-started).

@@ -3,9 +3,8 @@
 import config from "@/config/config";
 import path from "path";
 import { readFilesInDirectory } from "../file-utils";
-import { databases, FILES_COLL_ID, HEXPLORER_DB_ID } from "../appwrite.config";
-import { ID, Query } from "node-appwrite";
-import { CreateDbFileParams, DbFile } from "@/types/appwrite.files.types";
+import { db } from "@/lib/db";
+import { Prisma } from "@prisma/client";
 
 interface SyncFilesParams {
   path: string;
@@ -22,22 +21,24 @@ export const syncFiles = async ({
     if (!files) throw new Error(`no files at path ${basePath}`);
 
     // delete old file entries
-    const oldFiles = await databases.listDocuments(
-      HEXPLORER_DB_ID!,
-      FILES_COLL_ID!,
-      [Query.equal("path", basePath)],
-    );
-    for (const file of oldFiles.documents) {
-      await databases.deleteDocument(
-        HEXPLORER_DB_ID!,
-        FILES_COLL_ID!,
-        file.$id,
-      );
-    }
+    await db.dbFile.deleteMany({ where: { path: { equals: basePath } } });
+    // const oldFiles = await databases.listDocuments(
+    //   HEXPLORER_DB_ID!,
+    //   FILES_COLL_ID!,
+    //   [Query.equal("path", basePath)],
+    // );
+    // for (const file of oldFiles.documents) {
+    //   await databases.deleteDocument(
+    //     HEXPLORER_DB_ID!,
+    //     FILES_COLL_ID!,
+    //     file.$id,
+    //   );
+    // }
 
     // create new file entries
+    const dbFiles: Prisma.DbFileCreateInput[] = [];
     for (const file of files) {
-      const dbFile: CreateDbFileParams = {
+      const dbFile: Prisma.DbFileCreateInput = {
         name: file.name,
         path: basePath,
         isDirectory: file.isDirectory,
@@ -45,13 +46,15 @@ export const syncFiles = async ({
         modifiedDate: file.lastModified,
         size: file.size,
       };
-      await databases.createDocument(
-        HEXPLORER_DB_ID!,
-        FILES_COLL_ID!,
-        ID.unique(),
-        dbFile,
-      );
+      dbFiles.push(dbFile);
+      // await databases.createDocument(
+      //   HEXPLORER_DB_ID!,
+      //   FILES_COLL_ID!,
+      //   ID.unique(),
+      //   dbFile,
+      // );
     }
+    if (dbFiles.length > 0) await db.dbFile.createMany({ data: dbFiles });
 
     console.log("finished processing files at: ", {
       basePath,
@@ -75,31 +78,54 @@ export const searchFiles = async (
   params: FetchFilesParams,
 ): Promise<ExploreFilePageData | undefined> => {
   try {
-    console.log("searching files at: ", { params });
+    // console.log("searching files at: ", { params });
     const basePath = path.join(config.dataFolder, params.path);
-    // delete old file entries
-    const files = await databases.listDocuments(
-      HEXPLORER_DB_ID!,
-      FILES_COLL_ID!,
-      [
-        params.sortOrder === "asc"
-          ? Query.orderAsc(params.sortBy || "name")
-          : Query.orderDesc(params.sortBy || "name"),
-        params.search
-          ? Query.and([
-              Query.contains("name", params.search),
-              Query.startsWith("path", basePath),
-            ])
-          : Query.equal("path", basePath),
-      ],
-    );
-
+    const queryOrderyBy: any[] = [];
+    if (params.sortOrder === "asc") {
+      queryOrderyBy.push({ name: "asc" });
+    } else {
+      queryOrderyBy.push({ name: "desc" });
+    }
+    const queryWhere: any = {};
+    if (params.search) {
+      queryWhere["AND"] = [
+        { name: { contains: params.search, mode: "insensitive" } },
+        { path: { startsWith: basePath } },
+      ];
+    } else {
+      queryWhere["path"] = { equals: basePath };
+    }
+    // fetch file entries from db
+    const files = await db.dbFile.findMany({
+      where: queryWhere,
+      orderBy: queryOrderyBy,
+    });
+    // const files = await databases.listDocuments(
+    //   HEXPLORER_DB_ID!,
+    //   FILES_COLL_ID!,
+    //   [
+    //     params.sortOrder === "asc"
+    //       ? Query.orderAsc(params.sortBy || "name")
+    //       : Query.orderDesc(params.sortBy || "name"),
+    //     params.search
+    //       ? Query.and([
+    //           Query.contains("name", params.search),
+    //           Query.startsWith("path", basePath),
+    //         ])
+    //       : Query.equal("path", basePath),
+    //   ],
+    // );
     return {
+      // docs: [],
       docs:
-        files.documents.map((file) => {
-          console.log(file.path);
+        files.map((file: any) => {
+          // console.log(file.path);
           const filePath =
-            file.path === "data" ? "" : file.path?.replace(/^data\//, "");
+            file.path === config.dataFolder
+              ? ""
+              : file.path.startsWith(config.dataFolder)
+                ? file.path.replace(config.dataFolder, "")
+                : file.path;
           return {
             name: file.name,
             path: path.join(filePath, file.name),
@@ -111,7 +137,7 @@ export const searchFiles = async (
           };
         }) || [],
       pageCount: params.page,
-      docCount: files.documents.length || 0,
+      docCount: files.length || 0,
     };
   } catch (error: any) {
     console.error("An error occurred reading files:", error);
