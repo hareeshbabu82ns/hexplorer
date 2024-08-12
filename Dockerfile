@@ -27,6 +27,14 @@ COPY . .
 # Uncomment the following line in case you want to disable telemetry during the build.
 ENV NEXT_TELEMETRY_DISABLED 1
 
+# Run Prisma generation
+RUN \
+  if [ -f yarn.lock ]; then yarn run db:gen; \
+  elif [ -f package-lock.json ]; then npm run db:gen; \
+  elif [ -f pnpm-lock.yaml ]; then corepack enable pnpm && pnpm run db:gen; \
+  else echo "Lockfile not found." && exit 1; \
+  fi
+
 RUN \
   if [ -f yarn.lock ]; then yarn run build; \
   elif [ -f package-lock.json ]; then npm run build; \
