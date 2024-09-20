@@ -2,7 +2,6 @@
 @tailwind components;
 @tailwind utilities;
 
-
 @layer base {
   :root {
     --background: 0 0% 100%;
@@ -89,5 +88,21 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+
+  .md ul {
+    @apply pl-4 list-inside list-disc;
+  }
+  .md ol {
+    @apply pl-4 list-inside list-decimal;
+  }
+  .md table {
+    @apply w-full border-collapse border;
+  }
+  .md th {
+    @apply bg-muted text-muted-foreground font-bold p-2 border;
+  }
+  .md td {
+    @apply p-2 border;
   }
 }

@@ -1,8 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { usePathname } from "next/navigation";
-import BreadcrumbsPath from "../../components/BreadcrumbsPath";
+import BreadcrumbsPath from "@/components/BreadcrumbsPath";
 import ResyncFilesButton from "./components/resync-files-button";
 
 export default function Nav() {
