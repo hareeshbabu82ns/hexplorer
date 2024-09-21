@@ -9,7 +9,10 @@
     "lint": "next lint",
     "db:gen": "prisma generate",
     "db:migrate": "prisma migrate dev",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "release:patch": "pnpm version patch && git push && git push --tags",
+    "release:minor": "pnpm version minor && git push && git push --tags",
+    "release:major": "pnpm version major && git push && git push --tags"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",
