@@ -12,7 +12,6 @@ export async function GET(request: NextRequest, response: NextResponse) {
   const filePath = resolve(decodeURIComponent(path));
   const fileName = path.split("/").pop() || "file";
 
-  console.log("filePath", filePath);
   try {
     const fileStat = await stat(filePath);
     if (!fileStat.isFile()) {

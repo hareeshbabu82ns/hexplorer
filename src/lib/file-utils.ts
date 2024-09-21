@@ -1,6 +1,7 @@
 "use server";
 
 import fs from "fs/promises";
+// import fsSync from "fs";
 import path from "path";
 import crypto from "crypto";
 
@@ -12,7 +13,7 @@ interface FileAttributes {
   lastModified: Date;
   createdDate: Date;
   size: number;
-  // hash: string;
+  hash?: string;
   files?: FileAttributes[];
 }
 
@@ -24,7 +25,7 @@ async function getFileAttributes(
   const lastModified = stats.mtime;
   const createdDate = stats.birthtime;
   const size = stats.size;
-  // const hash = getFileHash(filePath);
+  // const hash = stats.isDirectory() ? "" : await getFileHash(filePath);
   return {
     name: path.basename(filePath),
     path: path.dirname(filePath),
@@ -38,8 +39,30 @@ async function getFileAttributes(
 }
 
 async function getFileHash(filePath: string): Promise<string | undefined> {
+  // return new Promise((resolve, reject) => {
+  //   const stats = fsSync.statSync(filePath);
+  //   const hash = crypto.createHash("md5");
+  //   const input = fsSync.createReadStream(filePath);
+  //   console.log({ filePath, stats });
+
+  //   input.on("data", (chunk) => {
+  //     hash.update(chunk);
+  //   });
+
+  //   input.on("end", () => {
+  //     const hexHash = hash.digest("hex");
+  //     console.log({ filePath, hash: hexHash });
+  //     resolve(hexHash);
+  //   });
+
+  //   input.on("error", (err) => {
+  //     console.error("An error occurred reading file:", err);
+  //     reject(err);
+  //   });
+  // });
   const fileData = await fs.readFile(filePath);
   const hash = crypto.createHash("md5").update(fileData).digest("hex");
+  // console.log({ filePath, hash });
   return hash;
 }
 

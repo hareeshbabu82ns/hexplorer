@@ -10,6 +10,46 @@ interface SyncFilesParams {
   path: string;
   recursive?: boolean;
 }
+export const fetchDuplicateFiles = async ({
+  filePath,
+}: {
+  filePath: string;
+}) => {
+  const basePath = path.join(config.dataFolder, filePath);
+  const files = await db.dbFile.findMany({
+    where: { path: { startsWith: basePath }, isDirectory: false },
+    select: { name: true, size: true, path: true },
+    orderBy: { size: "asc" },
+  });
+
+  // const files = await db.dbFile.groupBy({
+  //   by: ["name", "size"],
+  //   having: { size: { gt: 1 } },
+  //   orderBy: { _count: { size: "desc" } },
+  //   take: 100,
+  // });
+  // return files;
+  // remove not duplicate entries from files array comparing name and size attributes
+  const finalFiles: { name: string; path: string; size: number }[] = [];
+  files.forEach((file, idx) => {
+    const prevFile = idx === 0 ? { name: "", size: 0 } : files[idx - 1];
+    const nextFile =
+      idx === files.length - 1 ? { name: "", size: 0 } : files[idx + 1];
+    if (
+      file.name === prevFile.name ||
+      file.size === prevFile.size ||
+      file.name === nextFile.name ||
+      file.size === nextFile.size
+    ) {
+      finalFiles.push({
+        ...file,
+        path: file.path.replace(basePath, ""),
+      } as any);
+    }
+  });
+  return finalFiles;
+};
+
 export const syncFiles = async ({
   path: inPath,
   recursive = false,

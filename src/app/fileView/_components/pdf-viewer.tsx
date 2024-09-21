@@ -1,6 +1,5 @@
 "use client";
 
-import { Document, Page } from "react-pdf";
 import { useQuery } from "@tanstack/react-query";
 import { getFileData } from "../actions";
 
@@ -19,13 +18,7 @@ const PDFViewer = ({ filePath }: CompProps) => {
   if (error) return <div>Error: {error.message}</div>;
   if (!data) return <div>No data</div>;
 
-  return (
-    <div className="md p-8 text-lg">
-      <Document file={filePath}>
-        <Page pageNumber={1} />
-      </Document>
-    </div>
-  );
+  return <div className="md p-8 text-lg"></div>;
 };
 
 export default PDFViewer;

@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import BreadcrumbsPath from "@/components/BreadcrumbsPath";
 import ResyncFilesButton from "./components/resync-files-button";
+import { DuplicateFilesDlgBtn } from "./components/duplicate-files-dlg";
 
 export default function Nav() {
   return (
@@ -20,6 +21,7 @@ export default function Nav() {
       <div className="flex flex-row items-center gap-4">
         {/* right actions */}
         <ResyncFilesButton />
+        <DuplicateFilesDlgBtn />
       </div>
     </nav>
   );

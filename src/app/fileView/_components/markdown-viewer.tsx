@@ -44,7 +44,6 @@ const MarkdownViewer = ({ filePath }: CompProps) => {
           },
           img: (props) => {
             const { node, ...rest } = props;
-            console.log("Img:", node);
             const endOffset = node?.position?.end.offset;
             // read next string between { and } after endOffset
             if (

@@ -3,7 +3,6 @@ import MarkdownViewer from "../_components/markdown-viewer";
 import PDFViewer from "../_components/pdf-viewer";
 
 const FileViewPage = ({ params }: { params: { path: string[] } }) => {
-  console.log(params);
   const filePath = params.path.join("/");
   const fileExt = filePath.split(".").pop();
 
@@ -15,8 +14,8 @@ const FileViewPage = ({ params }: { params: { path: string[] } }) => {
     case "png":
     case "gif":
       return <ImageViewer filePath={filePath} />;
-    case "pdf":
-      return <PDFViewer filePath={filePath} />;
+    // case "pdf":
+    //   return <PDFViewer filePath={filePath} />;
     default:
       return <div>Unsupported file type</div>;
   }
