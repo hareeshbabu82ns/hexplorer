@@ -5,6 +5,10 @@ import path from "path";
 import { readFilesInDirectory } from "../file-utils";
 import { db } from "@/lib/db";
 import { Prisma } from "@prisma/client";
+import {
+  C_EXPLORER_DOMAIN,
+  C_EXPLORER_IGNORE_FILE_PATTERNS,
+} from "../constants";
 
 interface SyncFilesParams {
   path: string;
@@ -57,6 +61,13 @@ export const syncFiles = async ({
   const basePath = path.join(config.dataFolder, inPath);
   console.log("processing files at: ", { basePath });
   try {
+    const filesIgnorePatterns = await db.settings.findFirst({
+      where: {
+        domain: C_EXPLORER_DOMAIN,
+        key: C_EXPLORER_IGNORE_FILE_PATTERNS,
+      },
+    });
+
     const files = await readFilesInDirectory(basePath);
     if (!files) throw new Error(`no files at path ${basePath}`);
 
@@ -78,6 +89,8 @@ export const syncFiles = async ({
     // create new file entries
     const dbFiles: Prisma.DbFileCreateInput[] = [];
     for (const file of files) {
+      if (isFileIgnored(file.name, filesIgnorePatterns?.value)) continue;
+
       const dbFile: Prisma.DbFileCreateInput = {
         name: file.name,
         path: basePath,
@@ -209,3 +222,13 @@ export const searchFiles = async (
 //     console.error("An error occurred reading files:", error);
 //   }
 // };
+
+const isFileIgnored = (
+  fileName: string,
+  ignorePatterns?: string,
+  // isDirectory?: Boolean = false,
+) => {
+  if (!ignorePatterns) return false;
+  const patterns = ignorePatterns.split(",");
+  return patterns.some((pattern) => fileName.match(new RegExp(pattern)));
+};

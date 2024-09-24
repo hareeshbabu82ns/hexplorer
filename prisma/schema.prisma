@@ -25,3 +25,11 @@ model DbFile {
   birthDate    DateTime
   modifiedDate DateTime
 }
+
+model Settings {
+  id          String  @id @default(auto()) @map("_id") @db.ObjectId
+  domain      String
+  key         String
+  value       String
+  description String?
+}
