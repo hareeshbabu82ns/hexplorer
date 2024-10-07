@@ -123,3 +123,21 @@ Contributions are welcome! Please open an issue or submit a pull request.
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
+
+### coder home path
+```sh
+docker ps
+# instance id for 'coder-hareesh-ws-test' is coder-8a3d37ef-75df-49f0-9ce6-9a451ac1ab42
+docker inspect coder-hareesh-ws-test
+
+# go to mount folder
+cd /var/lib/docker/volumes/coder-8a3d37ef-75df-49f0-9ce6-9a451ac1ab42-home/_data/dev/hexplorer/data
+mkdir mnt_books
+
+mount -t cifs //192.168.86.10/books /var/lib/docker/volumes/coder-8a3d37ef-75df-49f0-9ce6-9a451ac1ab42-home/_data/dev/hexplorer/data/mnt_books -o username=hareesh,password=<XXX>,rw,vers=2.1
+
+mount -t cifs //192.168.86.10/books/Edu/Telugu/project-chalam-telugu-books-collection /var/lib/docker/volumes/coder-8a3d37ef-75df-49f0-9ce6-9a451ac1ab42-home/_data/dev/hexplorer/data/mnt_books -o username=hareesh,password=<XXX>,rw,vers=2.1
+
+umount /var/lib/docker/volumes/coder-8a3d37ef-75df-49f0-9ce6-9a451ac1ab42-home/_data/dev/hexplorer/data/mnt_books
+
+```

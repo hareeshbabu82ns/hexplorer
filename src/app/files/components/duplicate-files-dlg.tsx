@@ -12,8 +12,8 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { usePathname } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
-import { fetchDuplicateFiles } from "@/lib/actions/files";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { fetchDuplicateFiles, deleteDuplicateFiles } from "@/lib/actions/files";
 import {
   Table,
   TableBody,
@@ -24,14 +24,21 @@ import {
 } from "@/components/ui/table";
 
 export function DuplicateFilesDlgBtn() {
-  const pathname = decodeURI(usePathname().replace(/^\/files/, ""));
+  const pathname = decodeURI( usePathname().replace( /^\/files/, "" ) );
 
-  const { data, isFetching, isLoading } = useQuery({
-    queryKey: ["duplicate-files", { filePath: pathname }],
+  const { data, isFetching, isLoading } = useQuery( {
+    queryKey: [ "duplicate-files", { filePath: pathname } ],
     queryFn: async () => {
-      return await fetchDuplicateFiles({ filePath: pathname });
+      return await fetchDuplicateFiles( { filePath: pathname } );
     },
-  });
+  } );
+
+  const { mutate: deleteDuplicateFilesFn } = useMutation( {
+    mutationFn: deleteDuplicateFiles,
+    // onMutate: async () => {
+    //   await fetchDuplicateFiles( { filePath: pathname } );
+    // },
+  } );
 
   return (
     <Dialog>
@@ -42,12 +49,15 @@ export function DuplicateFilesDlgBtn() {
         <DialogHeader>
           <DialogTitle>Duplicate Files</DialogTitle>
           <DialogDescription>
-            Duplicate Files under the path <code>{pathname}</code>
+            Duplicate Files under the path <code>{pathname}</code> - {data?.length ? data.length : "No"} duplicates found
           </DialogDescription>
         </DialogHeader>
         <div className="flex h-[800px] flex-col items-center gap-2 space-x-2 overflow-auto">
-          {isLoading || (isFetching && <>Loading...</>)}
+          {isLoading || ( isFetching && <>Loading...</> )}
           {/* <pre>{JSON.stringify(data, null, 2)}</pre> */}
+          <div className="flex justify-end">
+            <Button variant="outline" onClick={() => deleteDuplicateFilesFn( { filePath: pathname } )}>Delete All</Button>
+          </div>
           <Table>
             <TableHeader>
               <TableRow>
@@ -57,13 +67,13 @@ export function DuplicateFilesDlgBtn() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {data?.map((file, idx) => (
+              {data?.map( ( file, idx ) => (
                 <TableRow key={file.name + `${idx}`}>
                   <TableCell className="font-medium">{file.name}</TableCell>
                   <TableCell>{file.path}</TableCell>
                   <TableCell className="text-right">{file.size}</TableCell>
                 </TableRow>
-              ))}
+              ) )}
             </TableBody>
           </Table>
         </div>

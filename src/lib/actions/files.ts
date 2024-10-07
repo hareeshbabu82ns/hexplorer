@@ -2,6 +2,7 @@
 
 import config from "@/config/config";
 import path from "path";
+import fs from "fs/promises";
 import { readFilesInDirectory } from "../file-utils";
 import { db } from "@/lib/db";
 import { Prisma } from "@prisma/client";
@@ -14,6 +15,31 @@ interface SyncFilesParams {
   path: string;
   recursive?: boolean;
 }
+
+export const deleteDuplicateFiles = async ({
+  filePath,
+}: {
+  filePath: string;
+}) => {
+  const duplicates = await fetchDuplicateFiles({ filePath });
+  if (!duplicates) return;
+  if (duplicates.length === 0) return;
+  const basePath = path.join(config.dataFolder, filePath);
+
+  // loop through duplicates, check if file and fileNext has same name and size and delete file
+  for (let idx = 0; idx < duplicates.length-1; idx++) {
+    const file = duplicates[idx];
+    const fileNext = duplicates[idx + 1];
+    if (file.name.substring(6) === fileNext.name.substring(6) && file.size === fileNext.size) {
+      const filePath = path.join(basePath, file.path, file.name);
+      // await db.dbFile.deleteMany({ where: { path: { equals: filePath } } });
+      console.log("deleting file: ",idx, filePath);
+      // delete file from path
+      await fs.unlink(filePath);
+    }
+  }
+};
+
 export const fetchDuplicateFiles = async ({
   filePath,
 }: {
