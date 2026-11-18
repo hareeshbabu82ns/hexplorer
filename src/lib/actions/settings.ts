@@ -1,44 +1,31 @@
 "use server";
 
-import { db } from "@/lib/db";
-import { Prisma } from "@prisma/client";
+import { collections } from "@/lib/db";
 
-export const fetchSettings = async (domain: string, key?: string) => {
-  if (key) {
-    return db.settings.findFirst({ where: { domain, key } });
-  } else {
-    return db.settings.findMany({ where: { domain } });
-  }
+export const fetchSettings = async (domain: string) => {
+  const { settings } = await collections();
+  const docs = await settings.find({ domain }).toArray();
+  return docs.map((d) => ({ key: d.key, value: d.value }));
 };
 
 export const updateSettings = async ({
   domain,
-  settings,
+  settings: values,
 }: {
   domain: string;
   settings: { key: string; value: string }[];
 }) => {
-  const oldSettings = await db.settings.findMany({ where: { domain } });
-  const newSettings: Prisma.SettingsCreateInput[] = [];
-  const updatedSettings: Prisma.SettingsUpdateArgs[] = [];
-
-  settings.forEach(({ key, value }) => {
-    const setting = oldSettings.find((s) => s.key === key);
-    if (setting) {
-      updatedSettings.push({
-        where: { id: setting.id },
-        data: { value },
-      });
-    } else {
-      newSettings.push({ domain, key, value });
-    }
-  });
-
-  if (newSettings.length) {
-    await db.settings.createMany({ data: newSettings });
-  }
-  for (const updatedSetting of updatedSettings) {
-    await db.settings.update(updatedSetting);
+  const { settings } = await collections();
+  if (values.length) {
+    await settings.bulkWrite(
+      values.map(({ key, value }) => ({
+        updateOne: {
+          filter: { domain, key },
+          update: { $set: { domain, key, value } },
+          upsert: true,
+        },
+      })),
+    );
   }
   return true;
 };

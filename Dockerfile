@@ -27,14 +27,6 @@ COPY . .
 # Uncomment the following line in case you want to disable telemetry during the build.
 ENV NEXT_TELEMETRY_DISABLED 1
 
-# Run Prisma generation
-RUN \
-  if [ -f yarn.lock ]; then yarn run db:gen; \
-  elif [ -f package-lock.json ]; then npm run db:gen; \
-  elif [ -f pnpm-lock.yaml ]; then corepack enable pnpm && pnpm run db:gen; \
-  else echo "Lockfile not found." && exit 1; \
-  fi
-
 RUN \
   if [ -f yarn.lock ]; then yarn run build; \
   elif [ -f package-lock.json ]; then npm run build; \
@@ -47,6 +39,10 @@ FROM base AS runner
 WORKDIR /app
 
 ENV NODE_ENV production
+
+# network remotes + backups: sshfs/sshpass (SSH), samba-client/cifs-utils (SMB), rsync
+# (mounting needs: --device /dev/fuse --cap-add SYS_ADMIN; cifs mounts need the container to run as root)
+RUN apk add --no-cache sshfs fuse3 openssh-client sshpass samba-client cifs-utils rsync
 # Uncomment the following line in case you want to disable telemetry during runtime.
 # ENV NEXT_TELEMETRY_DISABLED 1
 

@@ -1,13 +1,62 @@
-export default function IndexPage() {
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { listFolders } from "@/lib/actions/folders";
+import { formatSize } from "@/lib/utils";
+
+export const dynamic = "force-dynamic";
+
+export default async function IndexPage() {
+  let folders: DataFolder[] = [];
+  let dbError: string | null = null;
+  try {
+    folders = await listFolders();
+  } catch (e: any) {
+    dbError = e.message;
+  }
+  const files = folders.reduce((a, f) => a + f.fileCount, 0);
+  const size = folders.reduce((a, f) => a + f.totalSize, 0);
+
   return (
-    <section className="container grid items-center gap-6 pb-8 pt-6 md:py-10">
+    <section className="container grid gap-6 pb-8 pt-6 md:py-10">
       <div className="flex max-w-[980px] flex-col items-start gap-2">
         <h1 className="text-3xl font-extrabold leading-tight tracking-tighter md:text-4xl">
-          Helpful Books and Entertainment Tools.
+          HExplorer
         </h1>
         <p className="text-muted-foreground max-w-[700px] text-lg">
-          Small utilities and tools to help you with your daily tasks.
+          Index data folders into MongoDB, search and sort files, and clean up duplicates.
         </p>
+      </div>
+      {dbError && (
+        <p className="text-destructive">Database unavailable: {dbError} (check DATABASE_URL)</p>
+      )}
+      <div className="grid gap-4 sm:grid-cols-3">
+        {[
+          ["Data folders", folders.length.toLocaleString()],
+          ["Indexed files", files.toLocaleString()],
+          ["Total size", formatSize(size, 1)],
+        ].map(([label, value]) => (
+          <Card key={label}>
+            <CardHeader className="pb-1">
+              <CardTitle className="text-muted-foreground text-sm font-normal">{label}</CardTitle>
+            </CardHeader>
+            <CardContent className="text-2xl font-semibold">{value}</CardContent>
+          </Card>
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <Button asChild>
+          <Link href="/folders">Manage folders</Link>
+        </Button>
+        <Button asChild variant="outline">
+          <Link href="/remotes">SSH remotes</Link>
+        </Button>
+        <Button asChild variant="outline">
+          <Link href="/files">Search files</Link>
+        </Button>
+        <Button asChild variant="outline">
+          <Link href="/duplicates">Find duplicates</Link>
+        </Button>
       </div>
     </section>
   );

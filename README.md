@@ -1,6 +1,69 @@
-# Next.js File Explorer
+# HExplorer
 
-This is a simple Next.js File Explorer.
+Next.js app that indexes data folders into MongoDB, then lets you search, sort,
+browse and de-duplicate files — even while the folders are offline.
+
+## Features
+
+- **Data folders** (`/folders`): add local paths, scan/rescan (background, with
+  progress), per-folder stats. Ignore patterns live in Settings → Extras.
+- **Network remotes** (`/remotes`): SSH hosts (from `~/.ssh/config`, or host IP
+  with SSH key **or user ID + password**) and SMB/Windows shares (host IP + user
+  ID + password). Browse remote folders and mount one as a data folder (`sshfs`
+  or `mount -t cifs`). The app mounts on demand and unmounts after a per-folder
+  idle timeout. Passwords are stored AES-256-GCM encrypted with `APP_SECRET`.
+- **Scan / hash at any level**: rescan or content-hash the whole folder or any
+  sub folder (Files page toolbar for the current level, or the `…` menu on a
+  directory row). Sub folder scans only touch index entries below that folder.
+- **Backups** (`/backups`): back up any folder or sub folder to another data
+  folder (local or remote mount) or a local path with rsync — *sync* (copy
+  new/changed), *mirror* (exact copy, deletes extras) or *snapshot* (new
+  timestamped copy per run). Jobs are saved and can be re-run; the copy can be
+  indexed in the destination folder automatically.
+- **Files** (`/files`): browse folder trees or search by name across one/all
+  folders; sort by name, size, type, modified, created; multi-select delete.
+- **Duplicates** (`/duplicates`): group by name+size, similar name+size
+  (ignores `(1)`, `- Copy`, `Copy of`…), name only, or identical content (SHA-1
+  of same-size candidates). Auto-select all-but oldest/newest/shortest-path,
+  bulk or single delete.
+
+### Offline behaviour
+
+Browsing, search and duplicate detection read only from MongoDB, so they work
+when a share is unmounted or unreachable. Disk is touched only by scan, hash,
+file preview/download and delete; those first check the folder is reachable
+(mounting it if it is an SSH remote). An empty folder root that is indexed with
+entries is treated as "not mounted", so a scan never wipes the index, and
+deletes never drop index rows for an offline folder.
+
+## Local development
+
+```sh
+cp .env.template .env   # set DATABASE_URL (MongoDB) and DATA_FOLDER
+pnpm install
+pnpm dev
+```
+
+Collections (`folders`, `files`, `remotes`, `settings`) and indexes are created
+automatically on first connection.
+
+### Network remotes on Ubuntu
+
+```sh
+sudo ./scripts/ubuntu/setup.sh   # sshfs, sshpass, smbclient, cifs-utils, rsync, mounts dir, ssh key
+echo "APP_SECRET=$(openssl rand -hex 32)" >> .env   # needed for password logins
+```
+
+Then add the remote in the app (SSH key login additionally needs
+`ssh-copy-id user@host`). SMB mounts need root, or the sudoers rule that
+`setup.sh` installs for a non-root app user. Helper scripts for manual use:
+
+- `scripts/ubuntu/mount-remote.sh <[user@]host> <remote-path> <mount-point> [port]` (`SSH_PASSWORD=…` for password login)
+- `sudo scripts/ubuntu/mount-smb.sh <host-ip> <share[/dir]> <mount-point> <user> [domain] [vers]`
+- `scripts/ubuntu/unmount-idle.sh <mounts-root> [idle-minutes]` (cron-friendly)
+- `scripts/ubuntu/unmount-all.sh <mounts-root>`
+
+New SSH host keys are accepted on first use (`StrictHostKeyChecking=accept-new`).
 
 ### Run
 
@@ -10,7 +73,9 @@ docker build -t hexplorer:main .
 
 # run (from local)
 docker run -it -p 3000:3000 \
+ -e DATABASE_URL="mongodb://user:pass@host:27017/hexplorer" \
  --volume "$(pwd)"/data:/app/data:rw \
+ --device /dev/fuse --cap-add SYS_ADMIN \
  --rm hexplorer:main
 
 # run (from registry)
@@ -81,7 +146,10 @@ This command starts the container and maps port 3010 of the container to port 30
 Don't forget to set the environment variables, you can use the .env.template to know what has to be filled out.
 
 ```
-NEXT_PUBLIC_API_URL=
+DATABASE_URL=mongodb://...
+DATA_FOLDER=./data
+MOUNTS_FOLDER=./data/mounts   # optional
+APP_SECRET=...                # encrypts stored remote passwords
 ```
 
 ### 6. Stopping the Container

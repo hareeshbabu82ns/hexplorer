@@ -1,5 +1,5 @@
-const Page = () => {
-  return <div>Settings Page</div>;
-};
+import { redirect } from "next/navigation";
 
-export default Page;
+export default function Page() {
+  redirect("/settings/global");
+}

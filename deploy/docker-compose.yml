@@ -1,7 +1,7 @@
 version: "3"
 
 services:
-  docmost:
+  hexplorer:
     image: ghcr.io/hareeshbabu82ns/hexplorer:main
     container_name: hexplorer
     user: "1026:100"
@@ -9,11 +9,23 @@ services:
       #APP_URL: 'http://192.168.86.10:32010'
       APP_URL: "http://hexplorer.local"
       APP_SECRET: "3333xxx3333"
+      DATABASE_URL: "mongodb://user:password@mongo:27017/hexplorer?authSource=hexplorer"
+      DATA_FOLDER: "/app/data"
+      MOUNTS_FOLDER: "/app/data/mounts"
+    # needed only for SSH remote mounts (sshfs)
+    devices:
+      - /dev/fuse
+    cap_add:
+      - SYS_ADMIN
+    security_opt:
+      - apparmor:unconfined
     ports:
       - "43001:3000"
     restart: unless-stopped
     volumes:
       - data:/app/data
+      # ssh keys / config used for remotes
+      - ~/.ssh:/home/nextjs/.ssh:ro
 
 volumes:
   data:

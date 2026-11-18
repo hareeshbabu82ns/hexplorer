@@ -8,13 +8,14 @@ import Image from "next/image";
 import { cn } from "@/lib/utils";
 
 interface CompProps {
+  folderId: string;
   filePath: string;
 }
-const MarkdownViewer = ({ filePath }: CompProps) => {
+const MarkdownViewer = ({ folderId, filePath }: CompProps) => {
   const { data, isFetching, isLoading, error } = useQuery({
-    queryKey: ["fileData", filePath],
+    queryKey: ["fileData", folderId, filePath],
     queryFn: async () => {
-      const response = await getFileData(filePath);
+      const response = await getFileData(folderId, filePath);
       return response.data;
     },
   });
@@ -66,6 +67,7 @@ const MarkdownViewer = ({ filePath }: CompProps) => {
               return (
                 <Image
                   {...rest}
+                  unoptimized
                   src={rest.src || ""}
                   alt={rest.alt || "image"}
                   height={height}
@@ -76,9 +78,9 @@ const MarkdownViewer = ({ filePath }: CompProps) => {
               return (
                 <Image
                   {...rest}
+                  unoptimized
                   src={rest.src || ""}
                   alt={rest.alt || "image"}
-                  objectFit="cover"
                   height={400}
                   width={600}
                 />

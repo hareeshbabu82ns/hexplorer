@@ -1,260 +1,270 @@
 "use server";
 
-import config from "@/config/config";
-import path from "path";
 import fs from "fs/promises";
-import { readFilesInDirectory } from "../file-utils";
-import { db } from "@/lib/db";
-import { Prisma } from "@prisma/client";
+import { Filter, ObjectId } from "mongodb";
+import { collections, escapeRegex, FileDoc, FolderDoc, toObjectId } from "@/lib/db";
 import {
-  C_EXPLORER_DOMAIN,
-  C_EXPLORER_IGNORE_FILE_PATTERNS,
-} from "../constants";
+  assertFolderOnline,
+  safeJoin,
+  unhashedCandidates,
+  updateFolderStats,
+  withTimeout,
+} from "@/lib/scanner";
 
-interface SyncFilesParams {
-  path: string;
-  recursive?: boolean;
+const SORT_FIELDS: Record<FileSortKey, string> = {
+  name: "nameLower",
+  size: "size",
+  modifiedDate: "modifiedDate",
+  birthDate: "birthDate",
+  ext: "ext",
+};
+
+function serializeFile(f: FileDoc, folderNames?: Map<string, string>): ExploreFile {
+  const folderId = f.folderId.toHexString();
+  return {
+    id: f._id.toHexString(),
+    folderId,
+    folderName: folderNames?.get(folderId),
+    name: f.name,
+    relPath: f.relPath,
+    dir: f.dir,
+    ext: f.ext,
+    isDirectory: f.isDirectory,
+    size: f.size,
+    birthDate: f.birthDate?.toISOString(),
+    modifiedDate: f.modifiedDate?.toISOString(),
+    hash: f.hash ?? null,
+  };
 }
 
-export const deleteDuplicateFiles = async ({
-  filePath,
-}: {
-  filePath: string;
-}) => {
-  const duplicates = await fetchDuplicateFiles({ filePath });
-  if (!duplicates) return;
-  if (duplicates.length === 0) return;
-  const basePath = path.join(config.dataFolder, filePath);
+async function folderNameMap() {
+  const { folders } = await collections();
+  const all = await folders.find({}, { projection: { name: 1 } }).toArray();
+  return new Map(all.map((f) => [f._id.toHexString(), f.name]));
+}
 
-  // loop through duplicates, check if file and fileNext has same name and size and delete file
-  for (let idx = 0; idx < duplicates.length-1; idx++) {
-    const file = duplicates[idx];
-    const fileNext = duplicates[idx + 1];
-    if (file.name.substring(6) === fileNext.name.substring(6) && file.size === fileNext.size) {
-      const filePath = path.join(basePath, file.path, file.name);
-      // await db.dbFile.deleteMany({ where: { path: { equals: filePath } } });
-      console.log("deleting file: ",idx, filePath);
-      // delete file from path
-      await fs.unlink(filePath);
-    }
+function dirScope(dir: string): Filter<FileDoc> {
+  // everything at or below dir
+  return dir ? { dir: { $regex: `^${escapeRegex(dir)}(/|$)` } } : {};
+}
+
+/** DB only — works with the data folders unmounted */
+export async function searchFiles(params: SearchFilesParams): Promise<SearchFilesResult> {
+  const { files } = await collections();
+  const dir = (params.dir ?? "").replace(/^\/+|\/+$/g, "");
+  const pageSize = Math.min(Math.max(params.pageSize ?? 50, 1), 500);
+  const page = Math.max(params.page ?? 1, 1);
+  const search = params.search?.trim();
+
+  const where: Filter<FileDoc> = {};
+  if (params.folderId) where.folderId = toObjectId(params.folderId);
+  if (search) {
+    where.nameLower = { $regex: escapeRegex(search.toLowerCase()) };
+    if (params.recursive === false) where.dir = dir;
+    else Object.assign(where, dirScope(dir));
+  } else {
+    // plain browsing: direct children only
+    where.dir = dir;
   }
-};
 
-export const fetchDuplicateFiles = async ({
-  filePath,
-}: {
-  filePath: string;
-}) => {
-  const basePath = path.join(config.dataFolder, filePath);
-  const files = await db.dbFile.findMany({
-    where: { path: { startsWith: basePath }, isDirectory: false },
-    select: { name: true, size: true, path: true },
-    orderBy: { size: "asc" },
-  });
+  const sortField = SORT_FIELDS[params.sortBy ?? "name"] ?? "nameLower";
+  const order = params.sortOrder === "desc" ? -1 : 1;
+  const sort: Record<string, 1 | -1> = { isDirectory: -1, [sortField]: order };
+  if (sortField !== "nameLower") sort.nameLower = 1;
 
-  // const files = await db.dbFile.groupBy({
-  //   by: ["name", "size"],
-  //   having: { size: { gt: 1 } },
-  //   orderBy: { _count: { size: "desc" } },
-  //   take: 100,
-  // });
-  // return files;
-  // remove not duplicate entries from files array comparing name and size attributes
-  const finalFiles: { name: string; path: string; size: number }[] = [];
-  files.forEach((file, idx) => {
-    const prevFile = idx === 0 ? { name: "", size: 0 } : files[idx - 1];
-    const nextFile =
-      idx === files.length - 1 ? { name: "", size: 0 } : files[idx + 1];
-    if (
-      file.name === prevFile.name ||
-      file.size === prevFile.size ||
-      file.name === nextFile.name ||
-      file.size === nextFile.size
-    ) {
-      finalFiles.push({
-        ...file,
-        path: file.path.replace(basePath, ""),
-      } as any);
+  const [total, docs, names] = await Promise.all([
+    files.countDocuments(where),
+    files
+      .find(where)
+      .sort(sort)
+      .skip((page - 1) * pageSize)
+      .limit(pageSize)
+      .toArray(),
+    folderNameMap(),
+  ]);
+  return {
+    docs: docs.map((d) => serializeFile(d, names)),
+    total,
+    page,
+    pageCount: Math.max(1, Math.ceil(total / pageSize)),
+  };
+}
+
+/** DB only */
+export async function findDuplicates(params: {
+  folderIds?: string[];
+  mode: DuplicateMode;
+  dir?: string;
+  minSize?: number;
+  limit?: number;
+}): Promise<DuplicateResult> {
+  const { files, folders } = await collections();
+  const folderIds = params.folderIds?.length
+    ? params.folderIds.map(toObjectId)
+    : (await folders.find({}, { projection: { _id: 1 } }).toArray()).map((f) => f._id);
+
+  const match: Filter<FileDoc> = {
+    folderId: { $in: folderIds },
+    isDirectory: false,
+    size: { $gte: Math.max(params.minSize ?? 1, 0) },
+  };
+  const dir = (params.dir ?? "").replace(/^\/+|\/+$/g, "");
+  if (dir) Object.assign(match, dirScope(dir));
+  if (params.mode === "content") match.hash = { $type: "string" };
+
+  const groupKey =
+    params.mode === "name"
+      ? { name: "$nameLower" }
+      : params.mode === "similar-name-size"
+        ? { name: "$nameNorm", size: "$size" }
+        : params.mode === "content"
+          ? { hash: "$hash", size: "$size" }
+          : { name: "$nameLower", size: "$size" };
+
+  const limit = Math.min(params.limit ?? 300, 2000);
+  const [res] = await files
+    .aggregate<{
+      groups: { _id: any; count: number; size: number; wasted: number; ids: ObjectId[] }[];
+      totals: { totalGroups: number; totalWasted: number }[];
+    }>(
+      [
+        { $match: match },
+        {
+          $group: {
+            _id: groupKey,
+            count: { $sum: 1 },
+            size: { $max: "$size" },
+            total: { $sum: "$size" },
+            ids: { $push: "$_id" },
+          },
+        },
+        { $match: { count: { $gt: 1 } } },
+        { $addFields: { wasted: { $subtract: ["$total", "$size"] } } },
+        {
+          $facet: {
+            groups: [{ $sort: { wasted: -1, count: -1 } }, { $limit: limit }],
+            totals: [
+              {
+                $group: {
+                  _id: null,
+                  totalGroups: { $sum: 1 },
+                  totalWasted: { $sum: "$wasted" },
+                },
+              },
+            ],
+          },
+        },
+      ],
+      { allowDiskUse: true },
+    )
+    .toArray();
+
+  const groupsRaw = res?.groups ?? [];
+  const allIds = groupsRaw.flatMap((g) => g.ids);
+  const [docs, names] = await Promise.all([
+    files.find({ _id: { $in: allIds } }).toArray(),
+    folderNameMap(),
+  ]);
+  const byId = new Map(docs.map((d) => [d._id.toHexString(), d]));
+
+  const groups: DuplicateGroup[] = groupsRaw.map((g) => ({
+    key: Object.values(g._id).join(" · "),
+    size: g.size,
+    count: g.count,
+    wasted: g.wasted,
+    files: g.ids
+      .map((id) => byId.get(id.toHexString()))
+      .filter((d): d is FileDoc => !!d)
+      .sort((a, b) => a.modifiedDate.getTime() - b.modifiedDate.getTime())
+      .map((d) => serializeFile(d, names)),
+  }));
+
+  return {
+    groups,
+    totalGroups: res?.totals[0]?.totalGroups ?? 0,
+    totalWasted: res?.totals[0]?.totalWasted ?? 0,
+    unhashedCandidates:
+      params.mode === "content" ? (await unhashedCandidates(folderIds)).length : undefined,
+  };
+}
+
+/**
+ * Delete files/directories on disk and from the index. This is the one place
+ * (besides scan / view) that needs the folder mounted: each folder root is
+ * checked first so an unmounted share never causes index entries to be dropped.
+ */
+export async function deleteFiles(ids: string[]): Promise<DeleteResult> {
+  const { files, folders } = await collections();
+  const docs = await files.find({ _id: { $in: ids.map(toObjectId) } }).toArray();
+  const result: DeleteResult = { deleted: 0, failed: [] };
+
+  const found = new Set(docs.map((d) => d._id.toHexString()));
+  for (const id of ids)
+    if (!found.has(id)) result.failed.push({ id, error: "not in index" });
+
+  const byFolder = new Map<string, FileDoc[]>();
+  for (const d of docs) {
+    const k = d.folderId.toHexString();
+    byFolder.set(k, [...(byFolder.get(k) ?? []), d]);
+  }
+
+  for (const [folderId, items] of byFolder) {
+    const folder = (await folders.findOne({ _id: toObjectId(folderId) })) as FolderDoc | null;
+    if (!folder) {
+      items.forEach((d) =>
+        result.failed.push({ id: d._id.toHexString(), relPath: d.relPath, error: "folder not found" }),
+      );
+      continue;
     }
-  });
-  return finalFiles;
-};
-
-export const syncFiles = async ({
-  path: inPath,
-  recursive = false,
-}: SyncFilesParams) => {
-  const basePath = path.join(config.dataFolder, inPath);
-  console.log("processing files at: ", { basePath });
-  try {
-    const filesIgnorePatterns = await db.settings.findFirst({
-      where: {
-        domain: C_EXPLORER_DOMAIN,
-        key: C_EXPLORER_IGNORE_FILE_PATTERNS,
-      },
-    });
-
-    const files = await readFilesInDirectory(basePath);
-    if (!files) throw new Error(`no files at path ${basePath}`);
-
-    // delete old file entries
-    await db.dbFile.deleteMany({ where: { path: { equals: basePath } } });
-    // const oldFiles = await databases.listDocuments(
-    //   HEXPLORER_DB_ID!,
-    //   FILES_COLL_ID!,
-    //   [Query.equal("path", basePath)],
-    // );
-    // for (const file of oldFiles.documents) {
-    //   await databases.deleteDocument(
-    //     HEXPLORER_DB_ID!,
-    //     FILES_COLL_ID!,
-    //     file.$id,
-    //   );
-    // }
-
-    // create new file entries
-    const dbFiles: Prisma.DbFileCreateInput[] = [];
-    for (const file of files) {
-      if (isFileIgnored(file.name, filesIgnorePatterns?.value)) continue;
-
-      const dbFile: Prisma.DbFileCreateInput = {
-        name: file.name,
-        path: basePath,
-        isDirectory: file.isDirectory,
-        birthDate: file.createdDate,
-        modifiedDate: file.lastModified,
-        size: file.size,
-      };
-      dbFiles.push(dbFile);
-      // await databases.createDocument(
-      //   HEXPLORER_DB_ID!,
-      //   FILES_COLL_ID!,
-      //   ID.unique(),
-      //   dbFile,
-      // );
+    try {
+      await assertFolderOnline(folder);
+    } catch (e: any) {
+      items.forEach((d) =>
+        result.failed.push({ id: d._id.toHexString(), relPath: d.relPath, error: e.message }),
+      );
+      continue;
     }
-    if (dbFiles.length > 0) await db.dbFile.createMany({ data: dbFiles });
 
-    console.log("finished processing files at: ", {
-      basePath,
-      cound: files.length,
-    });
-
-    if (recursive) {
-      for (const file of files) {
-        if (file.isDirectory) {
-          await syncFiles({ path: path.join(inPath, file.name), recursive });
+    for (const d of items) {
+      try {
+        const abs = safeJoin(folder.path, d.relPath);
+        if (abs === folder.path) throw new Error("refusing to delete folder root");
+        try {
+          await withTimeout(
+            fs.rm(abs, { recursive: d.isDirectory, force: false }),
+            60000,
+            "delete",
+          );
+        } catch (e: any) {
+          // already gone on disk (root is online, verified above) → just drop from index
+          if (e.code !== "ENOENT") throw e;
         }
+        if (d.isDirectory) {
+          await files.deleteMany({
+            folderId: d.folderId,
+            $or: [{ _id: d._id }, { relPath: { $regex: `^${escapeRegex(d.relPath)}/` } }],
+          });
+        } else {
+          await files.deleteOne({ _id: d._id });
+        }
+        result.deleted++;
+      } catch (e: any) {
+        result.failed.push({
+          id: d._id.toHexString(),
+          relPath: d.relPath,
+          error: e.message ?? String(e),
+        });
       }
     }
-  } catch (error: any) {
-    console.error("An error occurred reading files:", error);
-    throw new Error("Failed to sync files");
+    await updateFolderStats(folder._id);
   }
-};
+  return result;
+}
 
-export const searchFiles = async (
-  params: FetchFilesParams,
-): Promise<ExploreFilePageData | undefined> => {
-  try {
-    // console.log("searching files at: ", { params });
-    const basePath = path.join(config.dataFolder, params.path);
-    const queryOrderyBy: any[] = [];
-    if (params.sortOrder === "asc") {
-      queryOrderyBy.push({ name: "asc" });
-    } else {
-      queryOrderyBy.push({ name: "desc" });
-    }
-    const queryWhere: any = {};
-    if (params.search) {
-      queryWhere["AND"] = [
-        { name: { contains: params.search, mode: "insensitive" } },
-        { path: { startsWith: basePath } },
-      ];
-    } else {
-      queryWhere["path"] = { equals: basePath };
-    }
-    // fetch file entries from db
-    const files = await db.dbFile.findMany({
-      where: queryWhere,
-      orderBy: queryOrderyBy,
-    });
-    // const files = await databases.listDocuments(
-    //   HEXPLORER_DB_ID!,
-    //   FILES_COLL_ID!,
-    //   [
-    //     params.sortOrder === "asc"
-    //       ? Query.orderAsc(params.sortBy || "name")
-    //       : Query.orderDesc(params.sortBy || "name"),
-    //     params.search
-    //       ? Query.and([
-    //           Query.contains("name", params.search),
-    //           Query.startsWith("path", basePath),
-    //         ])
-    //       : Query.equal("path", basePath),
-    //   ],
-    // );
-    return {
-      // docs: [],
-      docs:
-        files.map((file: any) => {
-          // console.log(file.path);
-          const filePath =
-            file.path === config.dataFolder
-              ? ""
-              : file.path.startsWith(config.dataFolder)
-                ? file.path.replace(config.dataFolder, "")
-                : file.path;
-          return {
-            name: file.name,
-            path: path.join(filePath, file.name),
-            size: file.size,
-            type: file.isDirectory
-              ? "directory"
-              : path.extname(file.name).split(".").pop() || "",
-            modifiedDate: file.modifiedDate,
-          };
-        }) || [],
-      pageCount: params.page,
-      docCount: files.length || 0,
-    };
-  } catch (error: any) {
-    console.error("An error occurred reading files:", error);
-  }
-};
-
-// export const searchFiles = async (
-//   params: FetchFilesParams,
-// ): Promise<ExploreFilePageData | undefined> => {
-//   try {
-//     const basePath = path.join(config.dataFolder, params.path);
-//     // console.log({ params, basePath });
-//     const files = await readFilesInDirectory(basePath);
-//     // console.log({ files });
-
-//     return {
-//       docs:
-//         files?.map((file) => ({
-//           name: file.name,
-//           path: path.join(params.path, file.name),
-//           size: file.size,
-//           type: file.isDirectory ? "directory" : file.ext,
-//           modifiedDate: file.lastModified.toISOString(),
-//         })) || [],
-//       pageCount: params.page,
-//       docCount: files?.length || 0,
-//     };
-//   } catch (error: any) {
-//     console.error("An error occurred reading files:", error);
-//   }
-// };
-
-const isFileIgnored = (
-  fileName: string,
-  ignorePatterns?: string,
-  // isDirectory?: Boolean = false,
-) => {
-  if (!ignorePatterns) return false;
-  const patterns = ignorePatterns.split(",");
-  return patterns.some((pattern) => fileName.match(new RegExp(pattern)));
-};
+export async function getFile(id: string) {
+  const { files, folders } = await collections();
+  const f = await files.findOne({ _id: toObjectId(id) });
+  if (!f) return null;
+  const folder = await folders.findOne({ _id: f.folderId });
+  return { file: serializeFile(f), folderName: folder?.name ?? "" };
+}

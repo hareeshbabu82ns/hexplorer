@@ -7,16 +7,12 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "db:gen": "prisma generate",
-    "db:migrate": "prisma migrate dev",
-    "db:studio": "prisma studio",
     "release:patch": "pnpm version patch && git push && git push --tags",
     "release:minor": "pnpm version minor && git push && git push --tags",
     "release:major": "pnpm version major && git push && git push --tags"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",
-    "@prisma/client": "^5.18.0",
     "@radix-ui/react-accordion": "^1.2.0",
     "@radix-ui/react-alert-dialog": "^1.1.1",
     "@radix-ui/react-aspect-ratio": "^1.1.0",
@@ -55,9 +51,9 @@
     "jotai": "^2.9.1",
     "lucide-react": "^0.417.0",
     "mime": "^4.0.4",
+    "mongodb": "^6.22.0",
     "next": "14.2.5",
     "next-themes": "^0.3.0",
-    "node-appwrite": "^13.0.0",
     "react": "^18",
     "react-day-picker": "8.10.1",
     "react-dom": "^18",
@@ -86,7 +82,6 @@
     "eslint-plugin-tailwindcss": "^3.17.4",
     "postcss": "^8",
     "prettier": "^3.3.3",
-    "prisma": "^5.18.0",
     "tailwindcss": "^3.4.1",
     "typescript": "^5"
   }

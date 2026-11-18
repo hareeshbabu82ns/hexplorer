@@ -10,6 +10,7 @@ import {
 } from "@/lib/constants";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import { toast } from "sonner";
 
 export default function SettingsAppearancePage() {
   const [explorerIgnorePatterns, setExplorerIgnorePatterns] = useState("");
@@ -24,9 +25,8 @@ export default function SettingsAppearancePage() {
     queryFn: async () => {
       const res = await fetchSettings(C_EXPLORER_DOMAIN);
       if (res) {
-        const settingsArray = Array.isArray(res) ? res : [res];
         setExplorerIgnorePatterns(
-          settingsArray.find(
+          res.find(
             (s: any) => s.key === C_EXPLORER_IGNORE_FILE_PATTERNS,
           )?.value || "",
         );
@@ -35,7 +35,7 @@ export default function SettingsAppearancePage() {
     },
   });
 
-  const { mutate: updateSettingsFn } = useMutation({
+  const { mutate: updateSettingsFn, isPending: saving } = useMutation({
     mutationKey: ["updateSettings", C_EXPLORER_DOMAIN],
     mutationFn: async () => {
       const settings = [
@@ -46,6 +46,8 @@ export default function SettingsAppearancePage() {
       ];
       return updateSettings({ domain: C_EXPLORER_DOMAIN, settings });
     },
+    onSuccess: () => toast.success("Saved — applies on next scan"),
+    onError: (e: any) => toast.error(e.message),
   });
 
   if (isLoading || isFetching) {
@@ -67,14 +69,20 @@ export default function SettingsAppearancePage() {
       </div>
       <Separator />
       <div className="space-y-4">
-        <h4 className="text-sm font-medium">Explorer Ignore Patterns</h4>
+        <h4 className="text-sm font-medium">Scan ignore patterns</h4>
+        <p className="text-muted-foreground text-xs">
+          Comma separated regular expressions matched against file/folder names, e.g.{" "}
+          <code>^\.,^@eaDir$,^Thumbs\.db$</code>
+        </p>
         <Input
           value={explorerIgnorePatterns}
           onChange={(e) => setExplorerIgnorePatterns(e.target.value)}
         />
       </div>
       <div className="flex justify-end">
-        <Button onClick={() => updateSettingsFn()}>Save</Button>
+        <Button disabled={saving} onClick={() => updateSettingsFn()}>
+          Save
+        </Button>
       </div>
     </div>
   );
