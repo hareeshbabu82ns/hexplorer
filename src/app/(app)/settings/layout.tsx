@@ -1,9 +1,8 @@
 import { Metadata } from "next";
-import { Separator } from "@/components/ui/separator";
 import { SidebarNav } from "./components/sidebar-nav";
 
 export const metadata: Metadata = {
-  title: "Hexplorer - Settings",
+  title: "Settings",
   description: "Explore Settings",
 };
 
@@ -11,6 +10,10 @@ const sidebarNavItems = [
   {
     title: "Global",
     href: "/settings/global",
+  },
+  {
+    title: "Security",
+    href: "/settings/security",
   },
   {
     title: "Appearance",
@@ -29,13 +32,9 @@ export default function Layout({
 }>) {
   return (
     <>
-      <div className="space-y-6 px-4 py-2 pb-16 md:px-10">
-        <div className="space-y-0.5">
-          <h2 className="text-xl font-bold tracking-tight">Settings</h2>
-        </div>
-        <Separator className="my-6" />
-        <div className="flex flex-col space-y-8 lg:flex-row lg:space-x-12 lg:space-y-0">
-          <aside className="-mx-4 lg:w-1/5">
+      <div className="space-y-6 px-4 py-6 pb-16 md:px-8">
+        <div className="flex flex-col gap-6 lg:flex-row lg:gap-10">
+          <aside className="-mx-1 overflow-x-auto lg:w-48 lg:shrink-0">
             <SidebarNav items={sidebarNavItems} />
           </aside>
           <div className="flex-1 lg:max-w-2xl">{children}</div>

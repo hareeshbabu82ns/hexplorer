@@ -106,3 +106,27 @@
     @apply p-2 border;
   }
 }
+
+/* app-like feel on touch devices (installed PWA / iPad) */
+@layer base {
+  html,
+  body {
+    overscroll-behavior: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  @media (display-mode: standalone) {
+    body {
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    input,
+    textarea,
+    [contenteditable],
+    pre,
+    code,
+    td {
+      -webkit-user-select: text;
+      user-select: text;
+    }
+  }
+}

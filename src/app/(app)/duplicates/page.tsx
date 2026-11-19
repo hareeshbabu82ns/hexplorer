@@ -106,9 +106,8 @@ function DuplicatesExplorer() {
   const busyFolders = folders?.filter((f) => f.status === "hashing");
 
   return (
-    <div className="space-y-4 px-4 py-4 pb-16 md:px-10">
+    <div className="space-y-4 p-4 pb-16 md:px-6">
       <div className="flex flex-wrap items-end gap-3">
-        <h2 className="mr-2 text-xl font-bold tracking-tight">Duplicates</h2>
         <div className="grid gap-1">
           <Label className="text-xs">Folder</Label>
           <FolderSelect value={folderId} onChange={(v) => (setFolderId(v), setSelected({}))} />

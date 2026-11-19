@@ -43,9 +43,8 @@ export default function BackupsPage() {
   });
 
   return (
-    <div className="space-y-6 px-4 py-4 pb-16 md:px-10">
+    <div className="space-y-6 p-4 pb-16 md:px-6">
       <div>
-        <h2 className="text-xl font-bold tracking-tight">Backups</h2>
         <p className="text-muted-foreground text-sm">
           Back up any data folder or sub folder to another data folder (local or a mounted
           remote) or a local path. Start one from here, or from the folder actions on the{" "}

@@ -46,9 +46,9 @@ import { formatSize } from "@/lib/utils";
 const COLUMNS: { key: FileSortKey; label: string; className?: string }[] = [
   { key: "name", label: "Name" },
   { key: "size", label: "Size", className: "w-24 text-right" },
-  { key: "ext", label: "Type", className: "w-20" },
+  { key: "ext", label: "Type", className: "hidden w-20 lg:table-cell" },
   { key: "modifiedDate", label: "Modified", className: "w-44" },
-  { key: "birthDate", label: "Created", className: "w-44" },
+  { key: "birthDate", label: "Created", className: "hidden w-44 xl:table-cell" },
 ];
 
 const fmtDate = (s?: string) => (s ? new Date(s).toLocaleString() : "-");
@@ -140,9 +140,8 @@ function FilesExplorer() {
   const crossFolder = !folderId;
 
   return (
-    <div className="space-y-4 px-4 py-4 pb-16 md:px-10">
+    <div className="space-y-4 p-4 pb-16 md:px-6">
       <div className="flex flex-wrap items-center gap-3">
-        <h2 className="text-xl font-bold tracking-tight">Files</h2>
         <FolderSelect
           value={folderId}
           onChange={(v) => setParams({ folder: v, dir: undefined })}
@@ -341,9 +340,9 @@ function FilesExplorer() {
                   <TableCell className="text-right text-sm">
                     {f.isDirectory ? "-" : formatSize(f.size, 1)}
                   </TableCell>
-                  <TableCell className="text-sm">{f.isDirectory ? "dir" : f.ext}</TableCell>
+                  <TableCell className="hidden text-sm lg:table-cell">{f.isDirectory ? "dir" : f.ext}</TableCell>
                   <TableCell className="text-sm">{fmtDate(f.modifiedDate)}</TableCell>
-                  <TableCell className="text-sm">{fmtDate(f.birthDate)}</TableCell>
+                  <TableCell className="hidden text-sm xl:table-cell">{fmtDate(f.birthDate)}</TableCell>
                   <TableCell className="whitespace-nowrap">
                     {f.isDirectory && (
                       <DropdownMenu>

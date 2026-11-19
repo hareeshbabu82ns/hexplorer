@@ -102,18 +102,32 @@ export interface SettingDoc {
 }
 
 const globalForMongo = globalThis as unknown as {
+  _client?: MongoClient;
   _mongoClient?: Promise<MongoClient>;
   _mongoIndexes?: Promise<void>;
 };
 
-function getClient(): Promise<MongoClient> {
+/** shared driver instance; it connects lazily on first use (also used by better-auth) */
+export function getMongoClient(): MongoClient {
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error("DATABASE_URL is not set");
+  if (!globalForMongo._client) globalForMongo._client = new MongoClient(url);
+  return globalForMongo._client;
+}
+
+export function getDbSync(): Db {
+  const client = getMongoClient();
+  return client.db(client.options.dbName || "hexplorer");
+}
+
+function getClient(): Promise<MongoClient> {
   if (!globalForMongo._mongoClient) {
-    globalForMongo._mongoClient = new MongoClient(url).connect().catch((e) => {
-      globalForMongo._mongoClient = undefined;
-      throw e;
-    });
+    globalForMongo._mongoClient = getMongoClient()
+      .connect()
+      .catch((e) => {
+        globalForMongo._mongoClient = undefined;
+        throw e;
+      });
   }
   return globalForMongo._mongoClient;
 }

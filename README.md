@@ -36,6 +36,31 @@ file preview/download and delete; those first check the folder is reachable
 entries is treated as "not mounted", so a scan never wipes the index, and
 deletes never drop index rows for an offline folder.
 
+## Sign in, 2FA and installing the app
+
+HExplorer is a single-user app. The first visit to `/login` creates the owner
+account (user ID + password); after that sign ups are refused.
+
+- **Passkeys** (Face ID / Touch ID / device PIN): offered right after setup and
+  in *Settings → Security*. Passkeys only work over `https` (or on `localhost`)
+  and are bound to the host name in `BETTER_AUTH_URL`.
+- **Two-factor (TOTP)**: *Settings → Security → Two-factor authentication*. Scan
+  the QR code with an authenticator app and save the backup codes. Password
+  sign in then asks for a code ("trust this device" skips it for 30 days);
+  passkey sign in does not.
+- Every page, server action and `/api/assets` request needs a session
+  (`src/middleware.ts`).
+
+Env vars: `BETTER_AUTH_URL`, `BETTER_AUTH_SECRET` (falls back to `APP_SECRET`),
+optional `BETTER_AUTH_TRUSTED_ORIGINS` (other URLs you open the app with) and
+`AUTH_INTERNAL_URL` (how the server reaches itself, e.g. `http://127.0.0.1:3000`
+behind a reverse proxy).
+
+**Install as an app:** on iPad/iPhone open the site in Safari → Share → *Add to
+Home Screen*; in Chrome/Edge use the install icon or *Install app* in the user
+menu. The layout is iPad-first: icon rail in portrait, full sidebar in
+landscape, bottom tab bar on phones.
+
 ## Local development
 
 ```sh

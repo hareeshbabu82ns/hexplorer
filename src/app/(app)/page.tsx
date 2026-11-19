@@ -18,11 +18,9 @@ export default async function IndexPage() {
   const size = folders.reduce((a, f) => a + f.totalSize, 0);
 
   return (
-    <section className="container grid gap-6 pb-8 pt-6 md:py-10">
+    <section className="grid gap-6 p-4 pb-8 md:p-6">
       <div className="flex max-w-[980px] flex-col items-start gap-2">
-        <h1 className="text-3xl font-extrabold leading-tight tracking-tighter md:text-4xl">
-          HExplorer
-        </h1>
+        <h2 className="text-2xl font-bold tracking-tight md:text-3xl">Welcome back</h2>
         <p className="text-muted-foreground max-w-[700px] text-lg">
           Index data folders into MongoDB, search and sort files, and clean up duplicates.
         </p>
@@ -49,7 +47,7 @@ export default async function IndexPage() {
           <Link href="/folders">Manage folders</Link>
         </Button>
         <Button asChild variant="outline">
-          <Link href="/remotes">SSH remotes</Link>
+          <Link href="/remotes">Network remotes</Link>
         </Button>
         <Button asChild variant="outline">
           <Link href="/files">Search files</Link>

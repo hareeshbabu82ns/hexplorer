@@ -398,7 +398,7 @@ export default function RemotesPage() {
   });
 
   return (
-    <div className="space-y-6 px-4 py-4 pb-16 md:px-10">
+    <div className="space-y-6 p-4 pb-16 md:px-6">
       <div>
         <h2 className="text-xl font-bold tracking-tight">Network remotes</h2>
         <p className="text-muted-foreground text-sm">
