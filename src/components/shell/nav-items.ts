@@ -8,6 +8,7 @@ import {
   LucideIcon,
   Server,
   Settings,
+  SquareTerminal,
 } from "lucide-react";
 
 export interface AppNavItem {
@@ -59,6 +60,13 @@ export const NAV_ITEMS: AppNavItem[] = [
     icon: Server,
     group: "Storage",
     description: "SSH & SMB connections and keys",
+  },
+  {
+    title: "Commands",
+    href: "/commands",
+    icon: SquareTerminal,
+    group: "Storage",
+    description: "Run scripts on SSH servers, fleet health",
   },
   { title: "Backups", href: "/backups", icon: Archive, group: "Storage", description: "rsync backup jobs" },
   {

@@ -108,18 +108,33 @@ async function identityPath(r: RemoteDoc): Promise<string | null> {
   return r.identityFile ? expandHome(r.identityFile) : null;
 }
 
-/** run a command on an ssh remote (key auth, or password via sshpass) */
-async function sshExec(r: RemoteDoc, remoteCmd: string, timeout = 20000) {
+/**
+ * argv for running remoteCmd on an ssh remote: [cmd, args, env].
+ * Password auth goes through sshpass (password passed in the environment, never argv).
+ */
+export async function sshCommand(
+  r: RemoteDoc,
+  remoteCmd: string,
+): Promise<{ cmd: string; args: string[]; env?: Record<string, string> }> {
   const args: string[] = [];
   for (const o of sshOpts(r)) args.push("-o", o);
   if (r.port) args.push("-p", String(r.port));
   const identity = await identityPath(r);
   if (identity) args.push("-i", identity, "-o", "IdentitiesOnly=yes");
   args.push(sshTarget(r), remoteCmd);
-  if (r.auth === "password") {
-    return run("sshpass", ["-e", "ssh", ...args], { env: { SSHPASS: password(r) }, timeout });
-  }
-  return run("ssh", args, { timeout });
+  if (r.auth === "password") return { cmd: "sshpass", args: ["-e", "ssh", ...args], env: { SSHPASS: password(r) } };
+  return { cmd: "ssh", args };
+}
+
+/** stored login password of a remote (password auth only), "" otherwise */
+export function remotePassword(r: RemoteDoc) {
+  return r.auth === "password" ? password(r) : "";
+}
+
+/** run a command on an ssh remote (key auth, or password via sshpass) */
+async function sshExec(r: RemoteDoc, remoteCmd: string, timeout = 20000) {
+  const c = await sshCommand(r, remoteCmd);
+  return run(c.cmd, c.args, { env: c.env, timeout });
 }
 
 /** Host aliases from ~/.ssh/config (without wildcards) */

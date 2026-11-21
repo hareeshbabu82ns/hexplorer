@@ -137,6 +137,21 @@ git tag -a v1 -m "tag instructions"
 git push origin --tags
 ```
 
+## Commands (remote script runner)
+
+`/commands` runs shell commands and multi-step scripts on one or many SSH remotes (the ones on the Remotes page).
+
+- **Console** – a runbook of steps. Each step is a command or multi-line script (sent to `bash -s`, so quotes and heredocs just work). Pick targets (or a saved group) and press **Run** / **Ctrl+Enter**, or **Run all steps**. Output streams live per server.
+- **Chain outputs visually** – click lines, shift-click ranges, switch to **Table** view and click cells or a column header, or highlight text. The selection feeds the next step as `{{sel}}` (`{{sel|q}}` quoted, `{{sel|lines}}`, `{{sel|csv}}`, `{{sel.0}}`, `{{sel|count}}`). Turn on **for each** to run a step once per value as `{{item}}`. Each server keeps its own selection.
+- **Auto-pick** – turn a column/filter selection into a rule so saved scripts re-run unattended. Without a rule, *Run all* pauses and waits for you to pick.
+- **Parameters** – `{{name}}` / `{{name|q}}`, typed (text, number, choice, yes/no, secret). Secrets are never saved and are masked in output and history. Built-ins: `{{host}}`, `{{target}}`, `{{user}}`.
+- **Multi-target** – bounded parallelism; servers that fail a step are dropped from later steps unless the step has *continue on error*. **Compare** groups servers by identical output.
+- **Safety** – destructive commands (`rm -rf`, reboot, mkfs, prune, `systemctl stop` …) need confirmation; per-step timeout and **Stop**.
+- **sudo** – per step; uses the remote's stored password (password auth) or a sudo password typed for the session (never stored).
+- **Scripts** – save, tag, favorite, export/import JSON, and a gallery of starter scripts (docker, systemd, disk usage, SMART, updates, TLS expiry, …).
+- **Fleet** – health of every SSH remote: load, memory, disks, uptime, pending/security updates, reboot required, failed systemd units, docker containers, with one-click fixes.
+- **History** – every run with full output (`command_runs` collection), searchable, re-openable in the console.
+
 ## DB Management
 
 The module's own metadata (saved connections, backup records, audit log) is
