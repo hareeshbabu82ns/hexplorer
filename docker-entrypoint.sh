@@ -40,6 +40,22 @@ if [ "$(id -u)" = "0" ]; then
     echo "entrypoint: warning: /dev/fuse not found - SSH (sshfs) mounts will fail." \
       "Docker: add 'devices: [/dev/fuse]' + 'cap_add: [SYS_ADMIN]'; Kubernetes: privileged" \
       "container or a hostPath /dev/fuse volume. The host needs the fuse module ('modprobe fuse')."
+  else
+    # things that make sshfs fail with "fuse: mount failed: Permission denied"
+    aa="$(cat /proc/self/attr/current 2>/dev/null || true)"
+    case "$aa" in
+      "" | unconfined*) ;;
+      *) echo "entrypoint: warning: AppArmor profile '$aa' blocks FUSE mounts;" \
+           "use security_opt 'apparmor:unconfined' (Kubernetes: appArmorProfile type Unconfined, or privileged)" ;;
+    esac
+    if grep -q '^NoNewPrivs:[[:space:]]*1' /proc/self/status; then
+      echo "entrypoint: warning: no-new-privileges is set; fusermount3 (setuid) cannot mount." \
+        "Remove 'no-new-privileges' (Kubernetes: allowPrivilegeEscalation: true)"
+    fi
+    capbnd="$(sed -n 's/^CapBnd:[[:space:]]*//p' /proc/self/status)"
+    if [ $(( 0x$capbnd >> 21 & 1 )) -eq 0 ]; then
+      echo "entrypoint: warning: CAP_SYS_ADMIN not granted; add cap_add: [SYS_ADMIN]"
+    fi
   fi
 
   if [ "$RUN_AS_ROOT" != "true" ]; then

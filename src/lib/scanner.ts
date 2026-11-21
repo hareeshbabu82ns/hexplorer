@@ -127,6 +127,10 @@ export async function updateFolderStats(folderId: ObjectId) {
   );
 }
 
+function literalFields(doc: Record<string, unknown>) {
+  return Object.fromEntries(Object.entries(doc).map(([k, v]) => [k, { $literal: v }]));
+}
+
 function upsertOp(
   folder: FolderDoc,
   relDir: string,
@@ -156,7 +160,9 @@ function upsertOp(
           },
         },
         {
-          $set: {
+          // values are wrapped in $literal: inside a pipeline update a string starting with "$"
+          // (e.g. SMB's "$RECYCLE.BIN") would otherwise be parsed as a field path
+          $set: literalFields({
             folderId: folder._id,
             relPath,
             name,
@@ -169,7 +175,7 @@ function upsertOp(
             birthDate: stats.birthtime,
             modifiedDate,
             scanId,
-          },
+          }),
         },
       ] as any,
     },
