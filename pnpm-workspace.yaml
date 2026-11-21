@@ -3,3 +3,6 @@ onlyBuiltDependencies:
   - '@prisma/engines'
   - esbuild
   - prisma
+
+# Match pnpm 11's default supply-chain policy: don't resolve versions published < 1 day ago
+minimumReleaseAge: 1440
