@@ -111,7 +111,8 @@ export function LoginForm({ setup, next }: { setup: boolean; next: string }) {
     done();
   };
 
-  const card = "bg-background space-y-5 rounded-2xl border p-6 shadow-xs";
+  const card =
+    "bg-card/80 space-y-5 rounded-2xl border p-6 shadow-[var(--shadow-elevated)] backdrop-blur-xl md:p-8";
 
   if (step === "2fa")
     return (

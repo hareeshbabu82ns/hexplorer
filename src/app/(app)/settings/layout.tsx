@@ -1,4 +1,6 @@
 import { Metadata } from "next";
+import { Settings } from "lucide-react";
+import { Page, PageHeader } from "@/components/app/page";
 import { SidebarNav } from "./components/sidebar-nav";
 
 export const metadata: Metadata = {
@@ -31,15 +33,14 @@ export default function Layout({
   children: React.ReactNode;
 }>) {
   return (
-    <>
-      <div className="space-y-6 px-4 py-6 pb-16 md:px-8">
-        <div className="flex flex-col gap-6 lg:flex-row lg:gap-10">
-          <aside className="-mx-1 overflow-x-auto lg:w-48 lg:shrink-0">
-            <SidebarNav items={sidebarNavItems} />
-          </aside>
-          <div className="flex-1 lg:max-w-2xl">{children}</div>
-        </div>
+    <Page>
+      <PageHeader icon={Settings} title="Settings" description="Server-wide preferences, security and appearance." />
+      <div className="flex flex-col gap-6 lg:flex-row lg:gap-10">
+        <aside className="-mx-1 overflow-x-auto lg:w-52 lg:shrink-0">
+          <SidebarNav items={sidebarNavItems} />
+        </aside>
+        <div className="surface min-w-0 flex-1 p-5 md:p-8 lg:max-w-3xl">{children}</div>
       </div>
-    </>
+    </Page>
   );
 }

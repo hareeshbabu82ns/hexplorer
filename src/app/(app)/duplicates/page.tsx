@@ -1,5 +1,8 @@
 "use client";
 
+import { Copy } from "lucide-react";
+import { Page, PageHeader } from "@/components/app/page";
+
 import { useSearchParams } from "next/navigation";
 import { Suspense, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -106,7 +109,8 @@ function DuplicatesExplorer() {
   const busyFolders = folders?.filter((f) => f.status === "hashing");
 
   return (
-    <div className="space-y-4 p-4 pb-16 md:px-6">
+    <Page className="space-y-6">
+      <PageHeader icon={Copy} title="Duplicates" description="Find copies by name, size or content hash and reclaim wasted space." />
       <div className="flex flex-wrap items-end gap-3">
         <div className="grid gap-1">
           <Label className="text-xs">Folder</Label>
@@ -267,7 +271,7 @@ function DuplicatesExplorer() {
           );
         })}
       </div>
-    </div>
+    </Page>
   );
 }
 

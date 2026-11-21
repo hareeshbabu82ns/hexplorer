@@ -30,7 +30,7 @@ export default async function CollectionPage(
   ];
   if (!conn.success)
     return (
-      <div className="space-y-6 p-4 pb-16 md:px-6">
+      <div className="mx-auto w-full max-w-7xl space-y-6 px-4 py-6 pb-16 md:px-8 md:py-8">
         <DbPageHeader crumbs={crumbs} title={collection} />
         <ErrorCard title="Could not connect" error={conn.error} />
       </div>
@@ -45,7 +45,7 @@ export default async function CollectionPage(
   const readOnly = collection.startsWith("system.") || info?.type === "view";
 
   return (
-    <div className="space-y-6 p-4 pb-16 md:px-6">
+    <div className="mx-auto w-full max-w-7xl space-y-6 px-4 py-6 pb-16 md:px-8 md:py-8">
       <DbPageHeader
         crumbs={crumbs}
         title={<span className="font-mono">{collection}</span>}

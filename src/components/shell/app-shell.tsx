@@ -1,15 +1,28 @@
 "use client";
 
-import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
 import { useState, useSyncExternalStore } from "react";
-import { MoreHorizontal, PanelLeftClose, PanelLeftOpen, Search } from "lucide-react";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import {
+  ChevronRight,
+  Command,
+  Moon,
+  MoreHorizontal,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Search,
+  Sun,
+} from "lucide-react";
+import { useTheme } from "next-themes";
+
 import { cn } from "@/lib/utils";
-import { siteConfig } from "@/config/site";
-import { activeItem, AppNavItem, isActive, NAV_ITEMS } from "./nav-items";
+import { Button } from "@/components/ui/button";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { LogoMark, Wordmark } from "@/components/app/logo";
+
+import { CommandPalette } from "./command-palette";
+import { activeItem, AppNavItem, isActive, NAV_GROUPS, NAV_ITEMS } from "./nav-items";
 import { ShellUser, UserMenu } from "./user-menu";
 
 const COLLAPSE_KEY = "hexplorer.sidebar.collapsed";
@@ -53,46 +66,74 @@ export function AppShell({ user, children }: { user: ShellUser; children: React.
   const toggleCollapsed = () => writeCollapsed(!collapsed);
   const wide = !collapsed;
   const current = activeItem(pathname);
+  const [paletteOpen, setPaletteOpen] = useState(false);
 
   return (
     <div className="bg-background flex h-dvh overflow-hidden">
       {/* sidebar / rail (tablet and up) */}
       <aside
         className={cn(
-          "bg-muted/40 hidden shrink-0 flex-col border-r md:flex",
+          "bg-sidebar border-sidebar-border hidden shrink-0 flex-col border-r transition-[width] duration-200 md:flex",
           "pb-[max(0.75rem,env(safe-area-inset-bottom))] pl-[env(safe-area-inset-left)] pt-[env(safe-area-inset-top)]",
-          "md:w-[88px]",
-          wide && "lg:w-64",
+          "md:w-21",
+          wide && "lg:w-65",
         )}
       >
-        <div className={cn("flex h-16 items-center justify-center px-3", wide && "lg:justify-between lg:px-4")}>
-          <Link href="/" className="flex items-center gap-2 font-bold">
-            <span className="bg-primary text-primary-foreground flex size-9 items-center justify-center rounded-xl text-lg">
-              H
+        <div
+          className={cn("flex h-16 items-center justify-center px-3", wide && "lg:justify-between lg:px-4")}
+        >
+          <Link href="/" className="flex items-center gap-2.5">
+            <LogoMark />
+            <span className={cn("hidden", wide && "lg:inline")}>
+              <Wordmark />
             </span>
-            <span className={cn("hidden text-lg", wide && "lg:inline")}>{siteConfig.name}</span>
           </Link>
           <Button
             variant="ghost"
-            size="icon"
-            className={cn("hidden", wide && "lg:inline-flex")}
+            size="icon-sm"
+            className={cn("text-muted-foreground hidden", wide && "lg:inline-flex")}
             onClick={toggleCollapsed}
             aria-label="Collapse sidebar"
           >
-            <PanelLeftClose className="size-5" />
+            <PanelLeftClose className="size-4" />
           </Button>
         </div>
-        <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-2 py-2">
-          {NAV_ITEMS.map((item) => (
-            <SideLink key={item.href} item={item} active={current === item} wide={wide} />
+
+        <div className={cn("hidden px-3 pb-2", wide && "lg:block")}>
+          <button
+            onClick={() => setPaletteOpen(true)}
+            className="bg-card text-muted-foreground hover:text-foreground shadow-xs flex h-9 w-full items-center gap-2 rounded-lg border px-3 text-sm transition-colors dark:bg-input/30"
+          >
+            <Search className="size-4" />
+            <span className="flex-1 text-left">Search…</span>
+            <Kbd />
+          </button>
+        </div>
+
+        <nav className="flex flex-1 flex-col gap-4 overflow-y-auto lg:px-3 p-2">
+          {NAV_GROUPS.map((group) => (
+            <div key={group} className="flex flex-col gap-0.5">
+              <div
+                className={cn(
+                  "text-muted-foreground/70 hidden px-3 pb-1 text-[11px] font-medium uppercase tracking-[0.08em]",
+                  wide && "lg:block",
+                )}
+              >
+                {group}
+              </div>
+              {NAV_ITEMS.filter((i) => i.group === group).map((item) => (
+                <SideLink key={item.href} item={item} active={current === item} wide={wide} />
+              ))}
+            </div>
           ))}
         </nav>
-        <div className={cn("flex flex-col items-center gap-1 px-2", wide && "lg:items-stretch")}>
+
+        <div className={cn("flex flex-col items-center gap-1 px-2", wide && "lg:items-stretch lg:px-3")}>
           {collapsed && (
             <Button
               variant="ghost"
               size="icon"
-              className="hidden size-12 lg:inline-flex"
+              className="text-muted-foreground hidden size-11 lg:inline-flex"
               onClick={toggleCollapsed}
               aria-label="Expand sidebar"
             >
@@ -104,7 +145,7 @@ export function AppShell({ user, children }: { user: ShellUser; children: React.
               <UserMenu user={user} compact side="right" />
             </div>
             {wide && (
-              <div className="hidden lg:block">
+              <div className="hidden rounded-xl border bg-card/60 p-1 shadow-xs lg:block">
                 <UserMenu user={user} side="top" />
               </div>
             )}
@@ -113,18 +154,41 @@ export function AppShell({ user, children }: { user: ShellUser; children: React.
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="bg-background/80 supports-backdrop-filter:bg-background/60 z-30 border-b pr-[env(safe-area-inset-right)] pt-[env(safe-area-inset-top)] backdrop-blur-sm">
-          <div className="flex h-14 items-center gap-3 px-4 md:h-16 md:px-6">
+        <header className="bg-background/75 supports-backdrop-filter:bg-background/60 z-30 border-b pr-[env(safe-area-inset-right)] pt-[env(safe-area-inset-top)] backdrop-blur-xl">
+          <div className="flex h-14 items-center gap-3 px-4 md:px-6">
             <Link href="/" className="md:hidden">
-              <span className="bg-primary text-primary-foreground flex size-8 items-center justify-center rounded-lg font-bold">
-                H
-              </span>
+              <LogoMark className="size-8 rounded-lg" />
             </Link>
-            <h1 className="truncate text-lg font-semibold md:text-xl">
-              {current?.title ?? siteConfig.name}
-            </h1>
-            <div className="ml-auto flex items-center gap-2">
-              <QuickSearch />
+            <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-1.5 text-sm">
+              <span className="text-muted-foreground hidden sm:inline">{current?.group ?? "Workspace"}</span>
+              <ChevronRight className="text-muted-foreground/50 hidden size-3.5 sm:block" />
+              <span className="flex min-w-0 items-center gap-2 font-medium">
+                {current && <current.icon className="text-muted-foreground size-4 shrink-0" />}
+                <span className="truncate">{current?.title ?? "HExplorer"}</span>
+              </span>
+            </nav>
+            <div className="ml-auto flex items-center gap-1.5">
+              <button
+                onClick={() => setPaletteOpen(true)}
+                className={cn(
+                  "bg-card text-muted-foreground hover:text-foreground shadow-xs hidden h-9 w-64 items-center gap-2 rounded-lg border px-3 text-sm transition-colors sm:flex dark:bg-input/30",
+                  wide && "lg:hidden",
+                )}
+              >
+                <Search className="size-4" />
+                <span className="flex-1 text-left">Search files…</span>
+                <Kbd />
+              </button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-9 sm:hidden"
+                aria-label="Search"
+                onClick={() => setPaletteOpen(true)}
+              >
+                <Search className="size-[18px]" />
+              </Button>
+              <ThemeToggle />
               <div className="md:hidden">
                 <UserMenu user={user} compact />
               </div>
@@ -140,58 +204,70 @@ export function AppShell({ user, children }: { user: ShellUser; children: React.
       </div>
 
       <BottomBar pathname={pathname} />
+      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
     </div>
+  );
+}
+
+function Kbd() {
+  return (
+    <kbd className="bg-muted text-muted-foreground inline-flex h-5 items-center gap-0.5 rounded border px-1.5 font-mono text-[10px] font-medium">
+      <Command className="size-2.5" />K
+    </kbd>
+  );
+}
+
+function ThemeToggle() {
+  const { resolvedTheme, setTheme } = useTheme();
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      className="text-muted-foreground hover:text-foreground size-9"
+      aria-label="Toggle theme"
+      onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
+    >
+      <Sun className="size-[18px] scale-100 rotate-0 transition-transform dark:scale-0 dark:-rotate-90" />
+      <Moon className="absolute size-[18px] scale-0 rotate-90 transition-transform dark:scale-100 dark:rotate-0" />
+    </Button>
   );
 }
 
 function SideLink({ item, active, wide }: { item: AppNavItem; active: boolean; wide: boolean }) {
   const Icon = item.icon;
-  return (
+  const link = (
     <Link
       href={item.href}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "flex min-h-14 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[11px] font-medium transition-colors",
-        wide && "lg:min-h-11 lg:flex-row lg:justify-start lg:gap-3 lg:px-3 lg:text-sm",
+        "group relative flex min-h-14 flex-col items-center justify-center gap-1 rounded-lg px-1 text-[11px] font-medium transition-colors",
+        wide && "lg:min-h-9 lg:flex-row lg:justify-start lg:gap-3 lg:px-3 lg:text-[13.5px]",
         active
-          ? "bg-primary/15 text-primary"
-          : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+          ? "bg-card text-foreground shadow-card ring-1 ring-border dark:bg-accent dark:ring-white/5"
+          : "text-muted-foreground hover:bg-accent/70 hover:text-foreground",
       )}
     >
-      <Icon className="size-5 shrink-0" />
+      {active && (
+        <span
+          className={cn(
+            "bg-primary absolute -left-2 top-1/2 hidden h-5 w-[3px] -translate-y-1/2 rounded-r-full",
+            wide && "lg:block",
+          )}
+        />
+      )}
+      <Icon
+        className={cn("size-5 shrink-0 lg:size-[18px]", active ? "text-primary" : "")}
+        strokeWidth={active ? 2.1 : 1.8}
+      />
       <span className="truncate">{item.title}</span>
     </Link>
   );
-}
-
-function QuickSearch() {
-  const router = useRouter();
-  const [q, setQ] = useState("");
+  if (wide) return link;
   return (
-    <>
-      <form
-        className="relative hidden sm:block"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (q.trim()) router.push(`/files?q=${encodeURIComponent(q.trim())}`);
-        }}
-      >
-        <Search className="text-muted-foreground pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2" />
-        <Input
-          type="search"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Search all files…"
-          className="h-10 w-56 rounded-full pl-9 lg:w-72"
-          enterKeyHint="search"
-        />
-      </form>
-      <Button asChild variant="ghost" size="icon" className="size-10 sm:hidden">
-        <Link href="/files" aria-label="Search files">
-          <Search className="size-5" />
-        </Link>
-      </Button>
-    </>
+    <Tooltip delayDuration={300}>
+      <TooltipTrigger asChild>{link}</TooltipTrigger>
+      <TooltipContent side="right">{item.description}</TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -208,9 +284,10 @@ function BottomBar({ pathname }: { pathname: string }) {
     setOpen(false);
   }
 
-  const tab = "flex flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[11px] font-medium";
+  const tab =
+    "relative flex flex-1 flex-col items-center justify-center gap-1 py-2 text-[10.5px] font-medium transition-colors";
   return (
-    <nav className="bg-background/90 supports-backdrop-filter:bg-background/70 fixed inset-x-0 bottom-0 z-40 flex border-t px-[env(safe-area-inset-left)] pb-[env(safe-area-inset-bottom)] backdrop-blur-sm md:hidden">
+    <nav className="bg-background/85 supports-backdrop-filter:bg-background/70 fixed inset-x-0 bottom-0 z-40 flex border-t px-[env(safe-area-inset-left)] pb-[env(safe-area-inset-bottom)] backdrop-blur-xl md:hidden">
       {primary.map((item) => {
         const Icon = item.icon;
         const active = current === item;
@@ -220,21 +297,22 @@ function BottomBar({ pathname }: { pathname: string }) {
             href={item.href}
             className={cn(tab, active ? "text-primary" : "text-muted-foreground")}
           >
-            <Icon className="size-6" />
+            {active && <span className="bg-primary absolute top-0 h-0.5 w-8 rounded-b-full" />}
+            <Icon className="size-[22px]" strokeWidth={active ? 2.1 : 1.8} />
             {item.title}
           </Link>
         );
       })}
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetTrigger className={cn(tab, moreActive ? "text-primary" : "text-muted-foreground")}>
-          <MoreHorizontal className="size-6" />
+          <MoreHorizontal className="size-[22px]" />
           More
         </SheetTrigger>
-        <SheetContent side="bottom" className="rounded-t-2xl pb-[calc(1.5rem+env(safe-area-inset-bottom))]">
+        <SheetContent side="bottom" className="rounded-t-3xl pb-[calc(1.5rem+env(safe-area-inset-bottom))]">
           <SheetHeader>
             <SheetTitle>More</SheetTitle>
           </SheetHeader>
-          <div className="mt-4 grid grid-cols-3 gap-3">
+          <div className="mt-4 grid grid-cols-2 gap-3">
             {more.map((item) => {
               const Icon = item.icon;
               return (
@@ -242,12 +320,19 @@ function BottomBar({ pathname }: { pathname: string }) {
                   key={item.href}
                   href={item.href}
                   className={cn(
-                    "flex flex-col items-center gap-2 rounded-xl border p-4 text-sm",
-                    isActive(pathname, item.href) && "border-primary text-primary",
+                    "surface flex items-center gap-3 p-4 text-sm font-medium",
+                    isActive(pathname, item.href) && "border-primary/40 text-primary",
                   )}
                 >
-                  <Icon className="size-6" />
-                  {item.title}
+                  <span className="bg-primary/10 text-primary flex size-9 items-center justify-center rounded-lg">
+                    <Icon className="size-[18px]" />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block">{item.title}</span>
+                    <span className="text-muted-foreground block truncate text-xs font-normal">
+                      {item.description}
+                    </span>
+                  </span>
                 </Link>
               );
             })}

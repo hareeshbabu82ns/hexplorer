@@ -47,7 +47,7 @@ export function DbPageHeader({
       </Breadcrumb>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="truncate text-2xl font-semibold tracking-tight">{title}</h1>
+          <h1 className="truncate text-2xl font-semibold tracking-tight md:text-[28px] md:leading-9">{title}</h1>
           {subtitle && <div className="text-muted-foreground mt-1 text-sm">{subtitle}</div>}
         </div>
         {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
@@ -58,9 +58,9 @@ export function DbPageHeader({
 
 export function StatCard({ label, value }: { label: string; value: ReactNode }) {
   return (
-    <div className="rounded-lg border p-3">
-      <div className="text-muted-foreground text-xs">{label}</div>
-      <div className="mt-1 text-lg font-semibold tabular-nums">{value}</div>
+    <div className="surface p-4">
+      <div className="text-muted-foreground text-xs font-medium">{label}</div>
+      <div className="mt-1.5 text-xl font-semibold tracking-tight tabular-nums">{value}</div>
     </div>
   );
 }

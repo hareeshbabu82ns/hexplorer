@@ -6,7 +6,6 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -19,28 +18,53 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { FOLDERS_KEY, useFolders } from "@/components/explorer/use-folders";
-import {
-  addFolder,
-  checkFolderOnline,
-  removeFolder,
-  startHashing,
-  startScan,
-} from "@/lib/actions/folders";
+import { addFolder, checkFolderOnline, removeFolder, startHashing, startScan } from "@/lib/actions/folders";
 import { setFolderMounted } from "@/lib/actions/remotes";
 import { BackupDialog, BackupSource } from "@/components/explorer/backup-dialog";
-import { formatAgo, formatSize } from "@/lib/utils";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { EmptyState, ErrorBanner, Metric, Page, PageHeader, SectionTitle } from "@/components/app/page";
+import {
+  Activity,
+  Archive,
+  Copy,
+  FingerprintPattern,
+  FolderOpen,
+  HardDrive,
+  Loader2,
+  MoreHorizontal,
+  Network,
+  Plug,
+  PlugZap,
+  Plus,
+  RefreshCw,
+  Trash2,
+} from "lucide-react";
+import { cn, formatAgo, formatSize } from "@/lib/utils";
 
 function StatusBadge({ f }: { f: DataFolder }) {
   if (f.status === "scanning")
-    return <Badge>Scanning… {f.progress ?? 0} entries</Badge>;
+    return (
+      <Badge variant="info">
+        <Loader2 className="animate-spin" /> Scanning · {(f.progress ?? 0).toLocaleString()}
+      </Badge>
+    );
   if (f.status === "hashing")
-    return <Badge>Hashing… {f.progress ?? 0} files</Badge>;
+    return (
+      <Badge variant="info">
+        <Loader2 className="animate-spin" /> Hashing · {(f.progress ?? 0).toLocaleString()}
+      </Badge>
+    );
   if (f.status === "error") return <Badge variant="destructive">Error</Badge>;
   if (!f.lastScanAt) return <Badge variant="outline">Not scanned</Badge>;
-  return <Badge variant="secondary">Indexed</Badge>;
+  return <Badge variant="success">Indexed</Badge>;
 }
 
 export default function FoldersPage() {
@@ -86,210 +110,237 @@ export default function FoldersPage() {
   });
   const check = useMutation({
     mutationFn: checkFolderOnline,
-    onSuccess: (r) =>
-      r.online ? toast.success("Folder is online") : toast.warning(r.message ?? "Offline"),
+    onSuccess: (r) => (r.online ? toast.success("Folder is online") : toast.warning(r.message ?? "Offline")),
     onError: onErr,
   });
 
+  const [removeTarget, setRemoveTarget] = useState<DataFolder | null>(null);
+
   return (
-    <div className="space-y-6 p-4 pb-16 md:px-6">
-      <div>
-        <h2 className="text-xl font-bold tracking-tight">Data folders</h2>
-        <p className="text-muted-foreground text-sm">
-          Add a local path here, or mount a folder from a{" "}
-          <Link href="/remotes" className="underline">network remote</Link> (SSH or SMB). Folders are scanned into MongoDB. Browsing, search and duplicate detection
-          work from the index even when a share is unmounted; only scan, hash, view and
-          delete need the folder on disk.
-        </p>
-      </div>
+    <Page>
+      <PageHeader
+        icon={HardDrive}
+        title="Data folders"
+        description={
+          <>
+            Add a local path, or mount one from a{" "}
+            <Link href="/remotes" className="text-foreground underline-offset-4 hover:underline">
+              network remote
+            </Link>
+            . Browsing, search and duplicate detection work from the index even when a share is unmounted;
+            only scan, hash, view and delete need the folder on disk.
+          </>
+        }
+      />
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Add folder</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form
-            className="flex flex-col gap-3 md:flex-row md:items-end"
-            onSubmit={(e) => {
-              e.preventDefault();
-              add.mutate();
-            }}
-          >
-            <div className="grid gap-1.5 md:w-56">
-              <Label htmlFor="fname">Name</Label>
-              <Input
-                id="fname"
-                placeholder="Books"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-              />
-            </div>
-            <div className="grid flex-1 gap-1.5">
-              <Label htmlFor="fpath">Path</Label>
-              <Input
-                id="fpath"
-                placeholder="/mnt/hexplorer/books  (relative paths resolve under DATA_FOLDER)"
-                value={folderPath}
-                onChange={(e) => setFolderPath(e.target.value)}
-                required
-              />
-            </div>
-            <div className="flex items-center gap-2 pb-2">
-              <Switch id="scannow" checked={scanNow} onCheckedChange={setScanNow} />
-              <Label htmlFor="scannow">Scan now</Label>
-            </div>
-            <Button type="submit" disabled={add.isPending || !folderPath}>
-              {add.isPending ? "Adding…" : "Add"}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
+      <section className="surface p-5">
+        <SectionTitle
+          title="Add folder"
+          description="Relative paths resolve under DATA_FOLDER."
+          className="mb-4"
+        />
+        <form
+          className="flex flex-col gap-3 md:flex-row md:items-end"
+          onSubmit={(e) => {
+            e.preventDefault();
+            add.mutate();
+          }}
+        >
+          <div className="grid gap-1.5 md:w-56">
+            <Label htmlFor="fname" className="text-[13px]">
+              Name
+            </Label>
+            <Input id="fname" placeholder="Books" value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
+          <div className="grid flex-1 gap-1.5">
+            <Label htmlFor="fpath" className="text-[13px]">
+              Path
+            </Label>
+            <Input
+              id="fpath"
+              className="font-mono"
+              placeholder="/mnt/hexplorer/books"
+              value={folderPath}
+              onChange={(e) => setFolderPath(e.target.value)}
+              required
+            />
+          </div>
+          <label htmlFor="scannow" className="flex h-10 items-center gap-2 text-sm">
+            <Switch id="scannow" checked={scanNow} onCheckedChange={setScanNow} />
+            Scan now
+          </label>
+          <Button type="submit" disabled={add.isPending || !folderPath}>
+            {add.isPending ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
+            {add.isPending ? "Adding…" : "Add folder"}
+          </Button>
+        </form>
+      </section>
 
-      {isLoading && <p>Loading…</p>}
-      {error && <p className="text-destructive">Failed to load folders: {error.message}</p>}
-      {folders && folders.length === 0 && (
-        <p className="text-muted-foreground">No folders yet — add one above.</p>
-      )}
+      <section className="space-y-4">
+        <SectionTitle
+          title="Folders"
+          description={
+            folders ? `${folders.length} folder${folders.length === 1 ? "" : "s"} indexed` : undefined
+          }
+        />
+        {isLoading && (
+          <div className="grid gap-4 lg:grid-cols-2">
+            {[0, 1].map((i) => (
+              <div key={i} className="surface h-56 animate-pulse" />
+            ))}
+          </div>
+        )}
+        {error && <ErrorBanner>Failed to load folders: {error.message}</ErrorBanner>}
+        {folders && folders.length === 0 && (
+          <EmptyState
+            icon={HardDrive}
+            title="No folders yet"
+            description="Add a local path above, or mount one from a remote."
+          />
+        )}
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        {folders?.map((f) => {
-          const busy = f.status === "scanning" || f.status === "hashing";
-          return (
-            <Card key={f.id}>
-              <CardHeader className="pb-2">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <CardTitle className="truncate text-base">
-                      <Link href={`/files?folder=${f.id}`} className="hover:underline">
+        <div className="grid gap-4 lg:grid-cols-2">
+          {folders?.map((f) => {
+            const busy = f.status === "scanning" || f.status === "hashing";
+            return (
+              <div key={f.id} className="surface flex min-w-0 flex-col">
+                <div className="flex items-start gap-3 p-5 pb-4">
+                  <span
+                    className={cn(
+                      "flex size-11 shrink-0 items-center justify-center rounded-xl",
+                      f.mount ? "bg-info/10 text-info" : "bg-primary/10 text-primary",
+                    )}
+                  >
+                    {f.mount ? <Network className="size-5" /> : <HardDrive className="size-5" />}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <Link href={`/files?folder=${f.id}`} className="truncate font-semibold hover:underline">
                         {f.name}
                       </Link>
-                    </CardTitle>
-                    <p className="text-muted-foreground truncate font-mono text-xs">
+                      <StatusBadge f={f} />
+                    </div>
+                    <p className="text-muted-foreground mt-0.5 truncate font-mono text-xs" title={f.path}>
                       {f.path}
                     </p>
                   </div>
-                  <StatusBadge f={f} />
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button size="icon-sm" variant="ghost" aria-label="More actions">
+                        <MoreHorizontal className="size-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-52">
+                      <DropdownMenuItem disabled={busy} onClick={() => hash.mutate(f.id)}>
+                        <FingerprintPattern className="mr-2 size-4" /> Hash candidates
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setBackupSource({ folderId: f.id, dir: "" })}>
+                        <Archive className="mr-2 size-4" /> Back up…
+                      </DropdownMenuItem>
+                      <DropdownMenuItem asChild>
+                        <Link href={`/duplicates?folder=${f.id}`}>
+                          <Copy className="mr-2 size-4" /> Duplicates
+                        </Link>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem disabled={check.isPending} onClick={() => check.mutate(f.id)}>
+                        <Activity className="mr-2 size-4" /> Check online
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        disabled={busy}
+                        className="text-destructive focus:text-destructive"
+                        onClick={() => setRemoveTarget(f)}
+                      >
+                        <Trash2 className="mr-2 size-4" /> Remove from index
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {f.mount && (
-                  <div className="flex flex-wrap items-center gap-2 rounded-md border px-3 py-2 text-xs">
-                    <Badge variant={f.mount.mounted ? "default" : "outline"}>
-                      {f.mount.mounted ? "Mounted" : "Unmounted"}
-                    </Badge>
-                    <span className="truncate font-mono">
-                      {f.mount.remoteName}:{f.mount.remotePath}
+
+                <div className="grid grid-cols-3 gap-4 border-y bg-muted/30 px-5 py-3.5">
+                  <Metric label="Files" value={f.fileCount.toLocaleString()} />
+                  <Metric label="Folders" value={f.dirCount.toLocaleString()} />
+                  <Metric label="Size" value={formatSize(f.totalSize, 1)} />
+                </div>
+
+                <div className="flex flex-1 flex-col gap-3 p-5 pt-4">
+                  {f.mount && (
+                    <div className="flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 text-xs">
+                      <span className="relative flex size-2">
+                        <span
+                          className={cn(
+                            "size-2 rounded-full",
+                            f.mount.mounted ? "bg-success" : "bg-muted-foreground/40",
+                          )}
+                        />
+                      </span>
+                      <span className="font-medium">{f.mount.mounted ? "Mounted" : "Unmounted"}</span>
+                      <span className="text-muted-foreground min-w-0 truncate font-mono">
+                        {f.mount.remoteName}:{f.mount.remotePath}
+                      </span>
+                      <span className="grow" />
+                      <Button
+                        size="xs"
+                        variant="outline"
+                        disabled={busy || mountToggle.isPending}
+                        onClick={() => mountToggle.mutate({ id: f.id, on: !f.mount!.mounted })}
+                      >
+                        {f.mount.mounted ? <PlugZap /> : <Plug />}
+                        {f.mount.mounted ? "Unmount" : "Mount"}
+                      </Button>
+                    </div>
+                  )}
+                  {f.statusMessage && (
+                    <p className={cn("text-xs", f.status === "error" ? "text-destructive" : "text-warning")}>
+                      {f.statusMessage}
+                    </p>
+                  )}
+                  <div className="mt-auto flex flex-wrap items-center gap-2">
+                    <span className="text-muted-foreground mr-auto text-xs">
+                      {f.lastScanAt
+                        ? `Scanned ${formatAgo(new Date(f.lastScanAt))} ago` +
+                          (f.lastScanDurationMs ? ` · ${(f.lastScanDurationMs / 1000).toFixed(1)}s` : "")
+                        : "Never scanned"}
+                      {f.mount &&
+                        ` · ${f.mount.idleMinutes ? `idle unmount ${f.mount.idleMinutes}m` : "stays mounted"}`}
                     </span>
-                    <span className="text-muted-foreground">
-                      {f.mount.idleMinutes
-                        ? `auto-unmount after ${f.mount.idleMinutes} min idle`
-                        : "stays mounted"}
-                    </span>
-                    <span className="grow" />
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-7"
-                      disabled={busy || mountToggle.isPending}
-                      onClick={() => mountToggle.mutate({ id: f.id, on: !f.mount!.mounted })}
-                    >
-                      {f.mount.mounted ? "Unmount" : "Mount"}
+                    <Button size="sm" variant="outline" asChild>
+                      <Link href={`/files?folder=${f.id}`}>
+                        <FolderOpen className="size-4" /> Browse
+                      </Link>
+                    </Button>
+                    <Button size="sm" disabled={busy} onClick={() => scan.mutate(f.id)}>
+                      <RefreshCw className={cn("size-4", busy && "animate-spin")} />
+                      {f.lastScanAt ? "Rescan" : "Scan"}
                     </Button>
                   </div>
-                )}
-                <div className="grid grid-cols-3 gap-2 text-sm">
-                  <div>
-                    <div className="text-muted-foreground text-xs">Files</div>
-                    {f.fileCount.toLocaleString()}
-                  </div>
-                  <div>
-                    <div className="text-muted-foreground text-xs">Folders</div>
-                    {f.dirCount.toLocaleString()}
-                  </div>
-                  <div>
-                    <div className="text-muted-foreground text-xs">Size</div>
-                    {formatSize(f.totalSize, 1)}
-                  </div>
                 </div>
-                <p className="text-muted-foreground text-xs">
-                  {f.lastScanAt
-                    ? `Last scan ${formatAgo(new Date(f.lastScanAt))} ago` +
-                      (f.lastScanDurationMs
-                        ? ` · took ${(f.lastScanDurationMs / 1000).toFixed(1)}s`
-                        : "")
-                    : "Never scanned"}
-                </p>
-                {f.statusMessage && (
-                  <p
-                    className={
-                      f.status === "error"
-                        ? "text-destructive text-xs"
-                        : "text-xs text-amber-600"
-                    }
-                  >
-                    {f.statusMessage}
-                  </p>
-                )}
-                <div className="flex flex-wrap gap-2">
-                  <Button size="sm" disabled={busy} onClick={() => scan.mutate(f.id)}>
-                    {f.lastScanAt ? "Rescan" : "Scan"}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={busy}
-                    onClick={() => hash.mutate(f.id)}
-                    title="Compute content hashes for same-size files (for content duplicate detection)"
-                  >
-                    Hash candidates
-                  </Button>
-                  <Button size="sm" variant="outline" asChild>
-                    <Link href={`/files?folder=${f.id}`}>Browse</Link>
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => setBackupSource({ folderId: f.id, dir: "" })}>
-                    Back up
-                  </Button>
-                  <Button size="sm" variant="outline" asChild>
-                    <Link href={`/duplicates?folder=${f.id}`}>Duplicates</Link>
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    disabled={check.isPending}
-                    onClick={() => check.mutate(f.id)}
-                    title="Probe the folder on disk (mounts an autofs share)"
-                  >
-                    Check online
-                  </Button>
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button size="sm" variant="ghost" className="text-destructive" disabled={busy}>
-                        Remove
-                      </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>Remove {f.name}?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          Removes the folder and its index from the database. Files on
-                          disk are not touched.
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction onClick={() => remove.mutate(f.id)}>
-                          Remove
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      <AlertDialog open={!!removeTarget} onOpenChange={(v) => !v && setRemoveTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove {removeTarget?.name}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Removes the folder and its index from the database. Files on disk are not touched.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => removeTarget && remove.mutate(removeTarget.id)}
+            >
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <BackupDialog source={backupSource} onClose={() => setBackupSource(null)} />
-    </div>
+    </Page>
   );
 }

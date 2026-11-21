@@ -1,6 +1,6 @@
 import { Metadata, Viewport } from "next";
 import "./globals.css";
-import { fontSans } from "@/lib/fonts";
+import { fontMono, fontSans } from "@/lib/fonts";
 import { cn } from "@/lib/utils";
 import { siteConfig } from "@/config/site";
 import { ThemeProvider } from "@/components/providers";
@@ -30,8 +30,8 @@ export const viewport: Viewport = {
   initialScale: 1,
   viewportFit: "cover",
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
-    { media: "(prefers-color-scheme: dark)", color: "#090b0a" },
+    { media: "(prefers-color-scheme: light)", color: "#f7f8fa" },
+    { media: "(prefers-color-scheme: dark)", color: "#0b0c0f" },
   ],
 };
 
@@ -41,8 +41,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body className={cn("min-h-dvh font-sans antialiased", fontSans.variable)}>
+    <html lang="en" suppressHydrationWarning className={cn(fontSans.variable, fontMono.variable)}>
+      <body className="min-h-dvh font-sans antialiased">
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           {children}
         </ThemeProvider>

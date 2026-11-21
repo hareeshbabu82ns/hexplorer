@@ -22,7 +22,7 @@ export default async function DatabasePage(props: { params: Promise<{ connection
   ];
   if (!conn.success)
     return (
-      <div className="space-y-6 p-4 pb-16 md:px-6">
+      <div className="mx-auto w-full max-w-7xl space-y-6 px-4 py-6 pb-16 md:px-8 md:py-8">
         <DbPageHeader crumbs={crumbs} title={database} />
         <ErrorCard title="Could not connect" error={conn.error} />
       </div>
@@ -35,7 +35,7 @@ export default async function DatabasePage(props: { params: Promise<{ connection
   const info = dbs.success ? dbs.data.find((d) => d.name === database) : undefined;
 
   return (
-    <div className="space-y-6 p-4 pb-16 md:px-6">
+    <div className="mx-auto w-full max-w-7xl space-y-6 px-4 py-6 pb-16 md:px-8 md:py-8">
       <DatabaseHeader
         crumbs={crumbs}
         connectionId={connectionId}

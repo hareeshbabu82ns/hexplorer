@@ -51,11 +51,11 @@ export function UserMenu({
         <Button
           variant="ghost"
           className={cn(
-            "h-12 gap-3 rounded-xl px-2",
+            "h-12 gap-3 rounded-lg px-2 active:scale-100",
             compact ? "w-12 justify-center" : "w-full justify-start",
           )}
         >
-          <span className="bg-primary text-primary-foreground flex size-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold">
+          <span className="bg-brand-gradient flex size-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold text-white shadow-[inset_0_1px_0_rgb(255_255_255/0.3)]">
             {initial}
           </span>
           {!compact && (

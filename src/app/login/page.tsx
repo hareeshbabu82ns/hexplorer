@@ -2,6 +2,7 @@ import { Metadata } from "next";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { auth, needsSetup } from "@/lib/auth";
+import { LogoMark } from "@/components/app/logo";
 import { LoginForm } from "./login-form";
 
 export const dynamic = "force-dynamic";
@@ -28,19 +29,19 @@ export default async function LoginPage(
   }
 
   return (
-    <div className="bg-muted/40 flex min-h-dvh items-center justify-center px-4 pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)]">
-      <div className="w-full max-w-md">
+    <div className="bg-background relative flex min-h-dvh items-center justify-center overflow-hidden px-4 pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)]">
+      <div className="bg-dots pointer-events-none absolute inset-0 mask-[radial-gradient(ellipse_at_center,black,transparent_70%)]" />
+      <div className="bg-primary/25 pointer-events-none absolute left-1/2 top-[-10%] size-[520px] -translate-x-1/2 rounded-full blur-[120px]" />
+      <div className="animate-fade-up relative w-full max-w-md">
         <div className="mb-8 flex flex-col items-center gap-3 text-center">
-          <span className="bg-primary text-primary-foreground flex size-16 items-center justify-center rounded-2xl text-3xl font-bold shadow-lg">
-            H
-          </span>
-          <h1 className="text-2xl font-bold tracking-tight">HExplorer</h1>
+          <LogoMark className="size-14 rounded-2xl" />
+          <h1 className="mt-2 text-2xl font-semibold tracking-tight">Welcome to HExplorer</h1>
           <p className="text-muted-foreground text-sm">
             {setup ? "Create the owner account for this server" : "Sign in to continue"}
           </p>
         </div>
         {dbError ? (
-          <div className="bg-background text-destructive rounded-2xl border p-6 text-sm">
+          <div className="surface text-destructive p-6 text-sm">
             Database unavailable: {dbError}. Check DATABASE_URL.
           </div>
         ) : (

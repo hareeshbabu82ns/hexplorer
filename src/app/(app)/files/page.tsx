@@ -1,5 +1,8 @@
 "use client";
 
+import { FolderSearch } from "lucide-react";
+import { Page, PageHeader } from "@/components/app/page";
+
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
@@ -150,7 +153,8 @@ function FilesExplorer() {
   const crossFolder = !folderId;
 
   return (
-    <div className="space-y-4 p-4 pb-16 md:px-6">
+    <Page className="space-y-6">
+      <PageHeader icon={FolderSearch} title="Files" description="Browse folders and search every indexed file. Sort, filter, view and act on files in place." />
       <div className="flex flex-wrap items-center gap-3">
         <FolderSelect
           value={folderId}
@@ -422,7 +426,7 @@ function FilesExplorer() {
         </>
       )}
       <BackupDialog source={backupSource} onClose={() => setBackupSource(null)} />
-    </div>
+    </Page>
   );
 }
 

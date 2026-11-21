@@ -9,7 +9,7 @@ export const revalidate = 0;
 export default async function DbManagementPage() {
   const res = await listConnections();
   return (
-    <div className="space-y-6 p-4 pb-16 md:px-6">
+    <div className="mx-auto w-full max-w-7xl space-y-6 px-4 py-6 pb-16 md:px-8 md:py-8">
       <DbPageHeader
         crumbs={[{ label: "DB Management" }]}
         title="DB Management"

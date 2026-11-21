@@ -27,7 +27,7 @@ export default async function ConnectionPage(
   const crumbs = [{ label: "DB Management", href: dbPath() }, { label: conn.success ? conn.data.name : connectionId }];
   if (!conn.success)
     return (
-      <div className="space-y-6 p-4 pb-16 md:px-6">
+      <div className="mx-auto w-full max-w-7xl space-y-6 px-4 py-6 pb-16 md:px-8 md:py-8">
         <DbPageHeader crumbs={crumbs} title="Connection" />
         <ErrorCard title="Could not connect" error={conn.error} />
       </div>
@@ -46,7 +46,7 @@ export default async function ConnectionPage(
 
   const o = overview.success ? overview.data : null;
   return (
-    <div className="space-y-6 p-4 pb-16 md:px-6">
+    <div className="mx-auto w-full max-w-7xl space-y-6 px-4 py-6 pb-16 md:px-8 md:py-8">
       <DbPageHeader
         crumbs={crumbs}
         title={conn.data.name}

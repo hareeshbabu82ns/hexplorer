@@ -7,6 +7,7 @@ import config from "@/config/config";
 import { collections, FolderDoc, RemoteDoc } from "./db";
 import { isJobRunning } from "./jobs";
 import { decryptSecret } from "./secrets";
+import { materializeKey } from "./ssh-keys";
 
 /** run a command without a shell; optional stdin + env; rejects with stderr */
 export function run(
@@ -100,12 +101,20 @@ function sshOpts(r: RemoteDoc) {
     : [...BASE_SSH_OPTS, "BatchMode=yes"]; // key auth: never prompt
 }
 
+/** private key file for key auth: uploaded key, then identityFile, else ssh defaults */
+async function identityPath(r: RemoteDoc): Promise<string | null> {
+  if (r.auth === "password") return null;
+  if (r.keyId) return materializeKey(r.keyId);
+  return r.identityFile ? expandHome(r.identityFile) : null;
+}
+
 /** run a command on an ssh remote (key auth, or password via sshpass) */
 async function sshExec(r: RemoteDoc, remoteCmd: string, timeout = 20000) {
   const args: string[] = [];
   for (const o of sshOpts(r)) args.push("-o", o);
   if (r.port) args.push("-p", String(r.port));
-  if (r.auth !== "password" && r.identityFile) args.push("-i", expandHome(r.identityFile));
+  const identity = await identityPath(r);
+  if (identity) args.push("-i", identity, "-o", "IdentitiesOnly=yes");
   args.push(sshTarget(r), remoteCmd);
   if (r.auth === "password") {
     return run("sshpass", ["-e", "ssh", ...args], { env: { SSHPASS: password(r) }, timeout });
@@ -266,7 +275,10 @@ async function mountSshfs(remote: RemoteDoc, remotePath: string, mountPoint: str
     "follow_symlinks",
   ];
   if (remote.auth === "password") opts.push("password_stdin");
-  else if (remote.identityFile) opts.push(`IdentityFile=${expandHome(remote.identityFile)}`);
+  else {
+    const identity = await identityPath(remote);
+    if (identity) opts.push(`IdentityFile=${identity}`, "IdentitiesOnly=yes");
+  }
   const args = [`${sshTarget(remote)}:${remotePath}`, mountPoint, "-o", opts.join(",")];
   if (remote.port) args.push("-p", String(remote.port));
   await run("sshfs", args, {

@@ -41,11 +41,28 @@ export interface RemoteDoc {
   port?: number | null;
   auth?: RemoteAuth; // ssh only; smb always uses password (or guest)
   identityFile?: string | null;
+  /** uploaded key (ssh_keys collection); takes precedence over identityFile */
+  keyId?: ObjectId | null;
   /** encrypted with APP_SECRET, see lib/secrets.ts */
   passwordEnc?: string | null;
   /** smb only */
   domain?: string | null;
   smbVersion?: string | null;
+  createdAt: Date;
+}
+
+export interface SshKeyDoc {
+  _id: ObjectId;
+  name: string;
+  /** e.g. ED25519, RSA */
+  keyType: string;
+  bits?: number | null;
+  /** SHA256:… */
+  fingerprint: string;
+  publicKey: string;
+  comment?: string | null;
+  /** unencrypted (passphrase stripped) private key, encrypted with APP_SECRET */
+  privateKeyEnc: string;
   createdAt: Date;
 }
 
@@ -170,6 +187,7 @@ export async function collections(): Promise<{
   settings: Collection<SettingDoc>;
   remotes: Collection<RemoteDoc>;
   backups: Collection<BackupDoc>;
+  sshKeys: Collection<SshKeyDoc>;
 }> {
   const db = await getDb();
   return {
@@ -178,6 +196,7 @@ export async function collections(): Promise<{
     settings: db.collection<SettingDoc>("settings"),
     remotes: db.collection<RemoteDoc>("remotes"),
     backups: db.collection<BackupDoc>("backups"),
+    sshKeys: db.collection<SshKeyDoc>("ssh_keys"),
   };
 }
 
