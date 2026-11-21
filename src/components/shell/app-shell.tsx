@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { MoreHorizontal, PanelLeftClose, PanelLeftOpen, Search } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,32 @@ import { activeItem, AppNavItem, isActive, NAV_ITEMS } from "./nav-items";
 import { ShellUser, UserMenu } from "./user-menu";
 
 const COLLAPSE_KEY = "hexplorer.sidebar.collapsed";
+const COLLAPSE_EVENT = "hexplorer:sidebar";
+
+/** sidebar collapsed flag, persisted in localStorage (in-memory if storage is blocked) */
+let collapsedFallback = false;
+function readCollapsed() {
+  try {
+    return localStorage.getItem(COLLAPSE_KEY) === "1";
+  } catch {
+    return collapsedFallback;
+  }
+}
+function writeCollapsed(v: boolean) {
+  collapsedFallback = v;
+  try {
+    localStorage.setItem(COLLAPSE_KEY, v ? "1" : "0");
+  } catch {}
+  window.dispatchEvent(new Event(COLLAPSE_EVENT));
+}
+function subscribeCollapsed(cb: () => void) {
+  window.addEventListener(COLLAPSE_EVENT, cb);
+  window.addEventListener("storage", cb);
+  return () => {
+    window.removeEventListener(COLLAPSE_EVENT, cb);
+    window.removeEventListener("storage", cb);
+  };
+}
 
 /**
  * iPad-first shell:
@@ -23,19 +49,8 @@ const COLLAPSE_KEY = "hexplorer.sidebar.collapsed";
  */
 export function AppShell({ user, children }: { user: ShellUser; children: React.ReactNode }) {
   const pathname = usePathname();
-  const [collapsed, setCollapsed] = useState(false);
-  useEffect(() => {
-    try {
-      setCollapsed(localStorage.getItem(COLLAPSE_KEY) === "1");
-    } catch {}
-  }, []);
-  const toggleCollapsed = () =>
-    setCollapsed((c) => {
-      try {
-        localStorage.setItem(COLLAPSE_KEY, c ? "0" : "1");
-      } catch {}
-      return !c;
-    });
+  const collapsed = useSyncExternalStore(subscribeCollapsed, readCollapsed, () => false);
+  const toggleCollapsed = () => writeCollapsed(!collapsed);
   const wide = !collapsed;
   const current = activeItem(pathname);
 
@@ -98,7 +113,7 @@ export function AppShell({ user, children }: { user: ShellUser; children: React.
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="bg-background/80 supports-[backdrop-filter]:bg-background/60 z-30 border-b pr-[env(safe-area-inset-right)] pt-[env(safe-area-inset-top)] backdrop-blur">
+        <header className="bg-background/80 supports-backdrop-filter:bg-background/60 z-30 border-b pr-[env(safe-area-inset-right)] pt-[env(safe-area-inset-top)] backdrop-blur-sm">
           <div className="flex h-14 items-center gap-3 px-4 md:h-16 md:px-6">
             <Link href="/" className="md:hidden">
               <span className="bg-primary text-primary-foreground flex size-8 items-center justify-center rounded-lg font-bold">
@@ -186,11 +201,16 @@ function BottomBar({ pathname }: { pathname: string }) {
   const primary = NAV_ITEMS.filter((i) => i.primary);
   const more = NAV_ITEMS.filter((i) => !i.primary);
   const moreActive = !!current && !current.primary;
-  useEffect(() => setOpen(false), [pathname]);
+  // close the "More" sheet after navigating
+  const [prevPath, setPrevPath] = useState(pathname);
+  if (pathname !== prevPath) {
+    setPrevPath(pathname);
+    setOpen(false);
+  }
 
   const tab = "flex flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[11px] font-medium";
   return (
-    <nav className="bg-background/90 supports-[backdrop-filter]:bg-background/70 fixed inset-x-0 bottom-0 z-40 flex border-t px-[env(safe-area-inset-left)] pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden">
+    <nav className="bg-background/90 supports-backdrop-filter:bg-background/70 fixed inset-x-0 bottom-0 z-40 flex border-t px-[env(safe-area-inset-left)] pb-[env(safe-area-inset-bottom)] backdrop-blur-sm md:hidden">
       {primary.map((item) => {
         const Icon = item.icon;
         const active = current === item;

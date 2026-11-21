@@ -21,13 +21,8 @@ import { ChevronDownIcon } from "lucide-react";
 import { useTheme } from "next-themes";
 
 const appearanceFormSchema = z.object({
-  theme: z.enum(["light", "dark", "system"], {
-    required_error: "Please select a theme.",
-  }),
-  font: z.enum(["inter", "manrope", "system"], {
-    invalid_type_error: "Select a font",
-    required_error: "Please select a font.",
-  }),
+  theme: z.enum(["light", "dark", "system"], { error: "Please select a theme." }),
+  font: z.enum(["inter", "manrope", "system"], { error: "Please select a font." }),
 });
 
 type AppearanceFormValues = z.infer<typeof appearanceFormSchema>;
@@ -105,15 +100,15 @@ export function AppearanceForm() {
                 </FormControl>
                 <div className="border-muted hover:border-accent items-center rounded-md border-2 p-1">
                   <div className="space-y-2 rounded-sm bg-[#ecedef] p-2">
-                    <div className="space-y-2 rounded-md bg-white p-2 shadow-sm">
+                    <div className="space-y-2 rounded-md bg-white p-2 shadow-xs">
                       <div className="h-2 w-[80px] rounded-lg bg-[#ecedef]" />
                       <div className="h-2 w-[100px] rounded-lg bg-[#ecedef]" />
                     </div>
-                    <div className="flex items-center space-x-2 rounded-md bg-white p-2 shadow-sm">
+                    <div className="flex items-center space-x-2 rounded-md bg-white p-2 shadow-xs">
                       <div className="size-4 rounded-full bg-[#ecedef]" />
                       <div className="h-2 w-[100px] rounded-lg bg-[#ecedef]" />
                     </div>
-                    <div className="flex items-center space-x-2 rounded-md bg-white p-2 shadow-sm">
+                    <div className="flex items-center space-x-2 rounded-md bg-white p-2 shadow-xs">
                       <div className="size-4 rounded-full bg-[#ecedef]" />
                       <div className="h-2 w-[100px] rounded-lg bg-[#ecedef]" />
                     </div>
@@ -131,15 +126,15 @@ export function AppearanceForm() {
                 </FormControl>
                 <div className="border-muted bg-popover hover:bg-accent hover:text-accent-foreground items-center rounded-md border-2 p-1">
                   <div className="space-y-2 rounded-sm bg-slate-950 p-2">
-                    <div className="space-y-2 rounded-md bg-slate-800 p-2 shadow-sm">
+                    <div className="space-y-2 rounded-md bg-slate-800 p-2 shadow-xs">
                       <div className="h-2 w-[80px] rounded-lg bg-slate-400" />
                       <div className="h-2 w-[100px] rounded-lg bg-slate-400" />
                     </div>
-                    <div className="flex items-center space-x-2 rounded-md bg-slate-800 p-2 shadow-sm">
+                    <div className="flex items-center space-x-2 rounded-md bg-slate-800 p-2 shadow-xs">
                       <div className="size-4 rounded-full bg-slate-400" />
                       <div className="h-2 w-[100px] rounded-lg bg-slate-400" />
                     </div>
-                    <div className="flex items-center space-x-2 rounded-md bg-slate-800 p-2 shadow-sm">
+                    <div className="flex items-center space-x-2 rounded-md bg-slate-800 p-2 shadow-xs">
                       <div className="size-4 rounded-full bg-slate-400" />
                       <div className="h-2 w-[100px] rounded-lg bg-slate-400" />
                     </div>
@@ -157,15 +152,15 @@ export function AppearanceForm() {
                 </FormControl>
                 <div className="border-muted bg-popover hover:bg-accent hover:text-accent-foreground items-center rounded-md border-2 p-1">
                   <div className="space-y-2 rounded-sm bg-slate-950 p-2">
-                    <div className="space-y-2 rounded-md bg-slate-800 p-2 shadow-sm">
+                    <div className="space-y-2 rounded-md bg-slate-800 p-2 shadow-xs">
                       <div className="h-2 w-[80px] rounded-lg bg-slate-400" />
                       <div className="h-2 w-[100px] rounded-lg bg-slate-400" />
                     </div>
-                    <div className="flex items-center space-x-2 rounded-md bg-slate-800 p-2 shadow-sm">
+                    <div className="flex items-center space-x-2 rounded-md bg-slate-800 p-2 shadow-xs">
                       <div className="size-4 rounded-full bg-slate-400" />
                       <div className="h-2 w-[100px] rounded-lg bg-slate-400" />
                     </div>
-                    <div className="flex items-center space-x-2 rounded-md bg-slate-800 p-2 shadow-sm">
+                    <div className="flex items-center space-x-2 rounded-md bg-slate-800 p-2 shadow-xs">
                       <div className="size-4 rounded-full bg-slate-400" />
                       <div className="h-2 w-[100px] rounded-lg bg-slate-400" />
                     </div>

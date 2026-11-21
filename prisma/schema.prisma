@@ -1,0 +1,75 @@
+// Prisma is used only for the DB Management module's own metadata
+// (saved connections, backups, audit log). Everything that touches a managed
+// server goes through the official `mongodb` driver (src/lib/db-admin).
+//
+// Note: Prisma's MongoDB connector needs a replica set (single-node is fine)
+// because it wraps writes in transactions.
+
+generator client {
+  provider      = "prisma-client-js"
+  // native for dev, musl for the alpine Docker image
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+model DbConnection {
+  id          String    @id @default(auto()) @map("_id") @db.ObjectId
+  name        String
+  /// AES-256-GCM encrypted connection string (see src/lib/db-admin/crypto.ts)
+  uriEnc      String
+  description String?
+  createdById String
+  lastUsedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("db_admin_connections")
+}
+
+model DbBackup {
+  id             String    @id @default(auto()) @map("_id") @db.ObjectId
+  /// "app" (built-in connection) or a DbConnection id
+  connectionId   String
+  /// snapshot, kept when the connection is renamed or deleted
+  connectionName String
+  database       String
+  name           String
+  description    String?
+  collections    String[]
+  documentCount  Int       @default(0)
+  sizeBytes      Float     @default(0)
+  fileName       String
+  /// running | completed | failed
+  status         String
+  /// backup | upload
+  source         String    @default("backup")
+  error          String?
+  createdById    String
+  createdAt      DateTime  @default(now())
+  completedAt    DateTime?
+
+  @@index([connectionId, createdAt])
+  @@map("db_admin_backups")
+}
+
+model DbAuditLog {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId       String
+  actorEmail   String?
+  /// e.g. database.drop, user.create, backup.restore
+  action       String
+  connectionId String?
+  /// e.g. db.collection
+  target       String?
+  success      Boolean
+  error        String?
+  details      Json?
+  at           DateTime @default(now())
+
+  @@index([at])
+  @@map("db_admin_audit")
+}

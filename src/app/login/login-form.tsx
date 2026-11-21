@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { Fingerprint, Loader2, ShieldCheck } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,7 @@ import { deviceName } from "@/lib/device-name";
 
 const passkeysSupported = () =>
   typeof window !== "undefined" && typeof window.PublicKeyCredential !== "undefined";
+const noSubscribe = () => () => {};
 
 export function LoginForm({ setup, next }: { setup: boolean; next: string }) {
   const router = useRouter();
@@ -22,7 +23,7 @@ export function LoginForm({ setup, next }: { setup: boolean; next: string }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
-  const [canPasskey, setCanPasskey] = useState(false);
+  const canPasskey = useSyncExternalStore(noSubscribe, passkeysSupported, () => false);
   const [code, setCode] = useState("");
   const [useBackup, setUseBackup] = useState(false);
   const [trustDevice, setTrustDevice] = useState(true);
@@ -33,7 +34,6 @@ export function LoginForm({ setup, next }: { setup: boolean; next: string }) {
   };
 
   useEffect(() => {
-    setCanPasskey(passkeysSupported());
     if (setup || !passkeysSupported()) return;
     // passkey suggestions in the username field's autofill (conditional UI)
     PublicKeyCredential.isConditionalMediationAvailable?.().then((ok) => {
@@ -111,7 +111,7 @@ export function LoginForm({ setup, next }: { setup: boolean; next: string }) {
     done();
   };
 
-  const card = "bg-background space-y-5 rounded-2xl border p-6 shadow-sm";
+  const card = "bg-background space-y-5 rounded-2xl border p-6 shadow-xs";
 
   if (step === "2fa")
     return (

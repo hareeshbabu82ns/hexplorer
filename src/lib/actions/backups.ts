@@ -73,7 +73,7 @@ export async function saveBackup(input: BackupInput, runNow = false): Promise<st
   } else {
     const p = input.destPath?.trim();
     if (!p || !path.isAbsolute(p)) throw new Error("Destination path must be absolute");
-    dest = { folderId: null, dir: "", path: path.resolve(p) };
+    dest = { folderId: null, dir: "", path: path.resolve(/*turbopackIgnore: true*/ p) };
   }
 
   const doc = {

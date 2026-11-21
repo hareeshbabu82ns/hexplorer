@@ -50,7 +50,11 @@ export function run(
 
 /** root under which app-managed mounts are created */
 export function mountsRoot() {
-  return path.resolve(process.env.MOUNTS_FOLDER || path.join(config.dataFolder, "mounts"));
+  // runtime folders: turbopackIgnore keeps the bundler from walking data/ (and the
+  // network shares mounted there) while it traces dependencies
+  return path.resolve(
+    /*turbopackIgnore: true*/ process.env.MOUNTS_FOLDER || path.join(/*turbopackIgnore: true*/ config.dataFolder, "mounts"),
+  );
 }
 
 export function slugify(s: string) {
@@ -112,7 +116,7 @@ async function sshExec(r: RemoteDoc, remoteCmd: string, timeout = 20000) {
 /** Host aliases from ~/.ssh/config (without wildcards) */
 export async function sshConfigHosts(): Promise<string[]> {
   try {
-    const txt = await fs.readFile(path.join(os.homedir(), ".ssh", "config"), "utf8");
+    const txt = await fs.readFile(path.join(/*turbopackIgnore: true*/ os.homedir(), ".ssh", "config"), "utf8");
     const hosts = new Set<string>();
     for (const line of txt.split("\n")) {
       const m = line.trim().match(/^Host\s+(.+)$/i);
@@ -132,8 +136,8 @@ export async function sshConfigHosts(): Promise<string[]> {
 
 /** temp credentials file (0600) for smbclient -A / mount.cifs credentials= */
 async function withSmbCreds<T>(r: RemoteDoc, fn: (credFile: string) => Promise<T>): Promise<T> {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "hx-smb-"));
-  const file = path.join(dir, "creds");
+  const dir = await fs.mkdtemp(path.join(/*turbopackIgnore: true*/ os.tmpdir(), "hx-smb-"));
+  const file = path.join(/*turbopackIgnore: true*/ dir, "creds");
   const lines = [`username=${r.user || "guest"}`, `password=${password(r)}`];
   if (r.domain) lines.push(`domain=${r.domain}`);
   await fs.writeFile(file, lines.join("\n") + "\n", { mode: 0o600 });
@@ -233,7 +237,7 @@ function decodeMountField(s: string) {
 export async function isMounted(mountPoint: string) {
   try {
     const txt = await fs.readFile("/proc/mounts", "utf8");
-    const target = path.resolve(mountPoint);
+    const target = path.resolve(/*turbopackIgnore: true*/ mountPoint);
     return txt.split("\n").some((l) => decodeMountField(l.split(" ")[1] ?? "") === target);
   } catch {
     return false;

@@ -15,6 +15,10 @@ services:
       DATABASE_URL: "mongodb://user:password@mongo:27017/hexplorer?authSource=hexplorer"
       DATA_FOLDER: "/app/data"
       MOUNTS_FOLDER: "/app/data/mounts"
+      # DB Management backups; must be on a persistent volume writable by the app user
+      DB_BACKUP_DIR: "/app/db-backups"
+      # encrypts saved DB connection strings (defaults to BETTER_AUTH_SECRET)
+      # DB_ADMIN_SECRET: "change-me-openssl-rand-hex-32"
     # needed only for SSH remote mounts (sshfs)
     devices:
       - /dev/fuse
@@ -27,10 +31,12 @@ services:
     restart: unless-stopped
     volumes:
       - data:/app/data
+      - db-backups:/app/db-backups
       # ssh keys / config used for remotes
       - ~/.ssh:/home/nextjs/.ssh:ro
 
 volumes:
+  db-backups:
   data:
     driver: local
     driver_opts:

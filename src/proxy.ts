@@ -36,7 +36,7 @@ async function hasValidSession(req: NextRequest): Promise<{ ok: boolean; setCook
   }
 }
 
-export async function middleware(req: NextRequest) {
+export async function proxy(req: NextRequest) {
   const { pathname, search } = req.nextUrl;
   if (PUBLIC.some((r) => r.test(pathname))) return NextResponse.next();
 

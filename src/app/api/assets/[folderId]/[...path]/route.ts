@@ -10,8 +10,9 @@ export const dynamic = "force-dynamic";
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { folderId: string; path: string[] } },
+  props: { params: Promise<{ folderId: string; path: string[] }> }
 ) {
+  const params = await props.params;
   const relPath = params.path.map((p) => decodeURIComponent(p)).join("/");
   let abs: string;
   try {

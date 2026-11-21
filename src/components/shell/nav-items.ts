@@ -1,6 +1,7 @@
 import {
   Archive,
   Copy,
+  Database,
   FolderSearch,
   HardDrive,
   LayoutDashboard,
@@ -24,6 +25,7 @@ export const NAV_ITEMS: AppNavItem[] = [
   { title: "Folders", href: "/folders", icon: HardDrive, primary: true },
   { title: "Remotes", href: "/remotes", icon: Server },
   { title: "Backups", href: "/backups", icon: Archive },
+  { title: "DB Management", href: "/db-management", icon: Database },
   { title: "Settings", href: "/settings", icon: Settings },
 ];
 

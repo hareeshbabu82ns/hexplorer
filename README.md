@@ -26,6 +26,13 @@ browse and de-duplicate files — even while the folders are offline.
   (ignores `(1)`, `- Copy`, `Copy of`…), name only, or identical content (SHA-1
   of same-size candidates). Auto-select all-but oldest/newest/shortest-path,
   bulk or single delete.
+- **DB Management** (`/db-management`): admin tool for one or more MongoDB
+  servers: saved connections (URIs encrypted at rest, never sent to the
+  browser) plus the built-in *App database*; databases, collections (capped,
+  views), indexes (unique / sparse / TTL), an Extended JSON document browser,
+  database users and roles, and streaming gzip backups that restore into any
+  saved connection (Replace or Merge). Every change is written to an audit log.
+  See [DB Management](#db-management) below.
 
 ### Offline behaviour
 
@@ -129,6 +136,37 @@ git tag -a v1 -m "tag instructions"
 git push origin --tags
 ```
 
+## DB Management
+
+The module's own metadata (saved connections, backup records, audit log) is
+stored with **Prisma 6** in the app database (`db_admin_connections`,
+`db_admin_backups`, `db_admin_audit`). Everything that touches a managed server
+uses the official `mongodb` driver.
+
+- Prisma's MongoDB connector needs a **replica set** (a single-node replica set
+  is fine). After changing `prisma/schema.prisma` run `pnpm db:generate`, and
+  `pnpm db:push` to create its indexes. `pnpm build` runs `prisma generate`.
+- `DB_BACKUP_DIR` (default `./data/backups`): backup files, one
+  `<backupId>.ndjson.gz` each (gzipped canonical Extended JSON, so every BSON
+  type round-trips). In Docker mount a persistent volume there, writable by the
+  app user.
+- `DB_ADMIN_SECRET`: key for encrypting saved connection strings (defaults to
+  `BETTER_AUTH_SECRET`, then `APP_SECRET`). Changing it means re-entering saved
+  connections.
+- `DB_ADMIN_USERS` (optional): restrict the module to these usernames / emails.
+  Otherwise the signed-in account (single-user app) is the admin.
+- The app's own database cannot be dropped, or restored over in Replace mode,
+  through the built-in connection or a saved connection to the same hosts.
+
+End-to-end checks run the real actions and API routes against a **dev** server
+(they create and drop `e2e_*` databases and a test user):
+
+```sh
+DATABASE_URL="mongodb://root:pass@127.0.0.1:27017/hexplorer_e2e?authSource=admin&directConnection=true" \
+DB_ADMIN_E2E_URI="mongodb://root:pass@127.0.0.1:27017/?authSource=admin&directConnection=true" \
+pnpm test:db-admin
+```
+
 ## Prerequisites
 
 - **Docker**: Make sure you have Docker installed on your system. You can download Docker from [Docker's official website](https://www.docker.com/get-started).
@@ -175,6 +213,8 @@ DATABASE_URL=mongodb://...
 DATA_FOLDER=./data
 MOUNTS_FOLDER=./data/mounts   # optional
 APP_SECRET=...                # encrypts stored remote passwords
+DB_BACKUP_DIR=./data/backups  # DB Management backups (mount a volume in Docker)
+DB_ADMIN_SECRET=...           # optional, encrypts saved DB connections
 ```
 
 ### 6. Stopping the Container

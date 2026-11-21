@@ -123,7 +123,7 @@ export async function addMountedFolder(input: {
   if (remote.type === "smb" && !input.remotePath.split("/").filter(Boolean).length)
     throw new Error("Open a share first — the share list itself cannot be mounted");
   const name = input.name.trim() || path.posix.basename(input.remotePath) || remote.name;
-  const mountPoint = path.join(mountsRoot(), slugify(`${remote.name}-${name}`));
+  const mountPoint = path.join(/*turbopackIgnore: true*/ mountsRoot(), slugify(`${remote.name}-${name}`));
   const { folders } = await collections();
   if (await folders.findOne({ path: mountPoint }))
     throw new Error(`A data folder already uses ${mountPoint}`);

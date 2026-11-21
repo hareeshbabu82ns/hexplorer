@@ -1,6 +1,5 @@
 import { ImageResponse } from "next/og";
 
-export const runtime = "edge";
 const SIZES = [180, 192, 512];
 
 export function generateStaticParams() {
@@ -8,7 +7,8 @@ export function generateStaticParams() {
 }
 
 /** app icons for the web manifest / apple-touch-icon, drawn at build time */
-export function GET(_req: Request, { params }: { params: { size: string } }) {
+export async function GET(_req: Request, props: { params: Promise<{ size: string }> }) {
+  const params = await props.params;
   const maskable = params.size.startsWith("maskable-");
   const size = Number(params.size.replace("maskable-", ""));
   if (!SIZES.includes(size)) return new Response("not found", { status: 404 });

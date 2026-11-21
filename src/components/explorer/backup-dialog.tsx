@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -54,13 +54,17 @@ export function BackupDialog({
   const [name, setName] = useState("");
 
   const srcFolder = folders?.find((f) => f.id === source?.folderId);
-  useEffect(() => {
-    if (!source) return;
-    setName("");
-    // default destination: first other folder
-    const other = folders?.find((f) => f.id !== source.folderId);
-    setDestFolderId((cur) => cur || other?.id || source.folderId);
-  }, [source, folders]);
+  // new source: clear the name; once folders are known, default the destination
+  // to the first other folder (adjusted during render, not in an effect)
+  const [prev, setPrev] = useState<{ source: BackupSource; folders: typeof folders }>({ source: null, folders: undefined });
+  if (prev.source !== source || prev.folders !== folders) {
+    setPrev({ source, folders });
+    if (source) {
+      if (prev.source !== source) setName("");
+      const other = folders?.find((f) => f.id !== source.folderId);
+      setDestFolderId((cur) => cur || other?.id || source.folderId);
+    }
+  }
 
   const save = useMutation({
     mutationFn: (runNow: boolean) =>

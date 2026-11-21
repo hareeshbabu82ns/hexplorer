@@ -171,7 +171,7 @@ function DuplicatesExplorer() {
         </div>
       )}
 
-      <div className="bg-background/95 sticky top-16 z-10 flex flex-wrap items-center gap-2 border-b py-2 backdrop-blur">
+      <div className="bg-background/95 sticky top-16 z-10 flex flex-wrap items-center gap-2 border-b py-2 backdrop-blur-sm">
         <span className="text-sm">
           {data
             ? `${data.totalGroups.toLocaleString()} groups · ${formatSize(data.totalWasted, 1)} reclaimable`

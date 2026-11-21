@@ -9,16 +9,17 @@ export const metadata: Metadata = { title: "Sign in" };
 
 const safeNext = (n?: string) => (n && n.startsWith("/") && !n.startsWith("//") ? n : "/");
 
-export default async function LoginPage({
-  searchParams,
-}: {
-  searchParams: { next?: string };
-}) {
+export default async function LoginPage(
+  props: {
+    searchParams: Promise<{ next?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
   const next = safeNext(searchParams.next);
   let setup = false;
   let dbError: string | null = null;
   try {
-    const session = await auth.api.getSession({ headers: headers() });
+    const session = await auth.api.getSession({ headers: await headers() });
     if (session) redirect(next);
     setup = await needsSetup();
   } catch (e: any) {

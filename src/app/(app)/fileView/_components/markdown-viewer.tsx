@@ -68,7 +68,7 @@ const MarkdownViewer = ({ folderId, filePath }: CompProps) => {
                 <Image
                   {...rest}
                   unoptimized
-                  src={rest.src || ""}
+                  src={typeof rest.src === "string" ? rest.src : ""}
                   alt={rest.alt || "image"}
                   height={height}
                   width={width}
@@ -79,7 +79,7 @@ const MarkdownViewer = ({ folderId, filePath }: CompProps) => {
                 <Image
                   {...rest}
                   unoptimized
-                  src={rest.src || ""}
+                  src={typeof rest.src === "string" ? rest.src : ""}
                   alt={rest.alt || "image"}
                   height={400}
                   width={600}

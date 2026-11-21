@@ -76,7 +76,7 @@ async function readFilesInDirectory(
     const fileNames = await fs.readdir(dirPath);
 
     for (const fileName of fileNames) {
-      const filePath = path.join(dirPath, fileName);
+      const filePath = path.join(/*turbopackIgnore: true*/ dirPath, fileName);
       const stats = await fs.stat(filePath);
 
       // if (stats.isDirectory() && includeSubdirectories) {

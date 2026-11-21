@@ -4,9 +4,7 @@ import React from "react";
 import Link from "next/link";
 import { Button } from "./ui/button";
 
-type Props = {};
-
-export default function Copyright({}: Props) {
+export default function Copyright() {
   const currentYear = new Date().getFullYear();
 
   return (

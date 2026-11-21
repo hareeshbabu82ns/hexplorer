@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -11,20 +11,29 @@ interface BeforeInstallPromptEvent extends Event {
  * "Install app" support: Chrome/Edge/Android fire beforeinstallprompt;
  * iPadOS/iOS Safari have no prompt API, so we show Add to Home Screen steps.
  */
+const STANDALONE_MQ = "(display-mode: standalone)";
+
+function subscribeStandalone(cb: () => void) {
+  const mq = window.matchMedia(STANDALONE_MQ);
+  mq.addEventListener("change", cb);
+  return () => mq.removeEventListener("change", cb);
+}
+const isStandalone = () =>
+  window.matchMedia(STANDALONE_MQ).matches || (navigator as any).standalone === true;
+
+// iPadOS reports itself as Mac; touch points tell them apart
+const isIos = () => {
+  const ua = navigator.userAgent;
+  return /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+};
+const noSubscribe = () => () => {};
+
 export function useInstallPrompt() {
   const [event, setEvent] = useState<BeforeInstallPromptEvent | null>(null);
-  const [standalone, setStandalone] = useState(true);
-  const [ios, setIos] = useState(false);
+  const standalone = useSyncExternalStore(subscribeStandalone, isStandalone, () => true);
+  const ios = useSyncExternalStore(noSubscribe, isIos, () => false);
 
   useEffect(() => {
-    const mq = window.matchMedia("(display-mode: standalone)");
-    const update = () =>
-      setStandalone(mq.matches || (navigator as any).standalone === true);
-    update();
-    mq.addEventListener("change", update);
-    // iPadOS reports itself as Mac; touch points tell them apart
-    const ua = navigator.userAgent;
-    setIos(/iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1));
 
     const onPrompt = (e: Event) => {
       e.preventDefault();
@@ -34,7 +43,6 @@ export function useInstallPrompt() {
     window.addEventListener("beforeinstallprompt", onPrompt);
     window.addEventListener("appinstalled", onInstalled);
     return () => {
-      mq.removeEventListener("change", update);
       window.removeEventListener("beforeinstallprompt", onPrompt);
       window.removeEventListener("appinstalled", onInstalled);
     };

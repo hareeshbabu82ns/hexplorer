@@ -65,12 +65,12 @@ export default function FoldersPage() {
     onError: onErr,
   });
   const scan = useMutation({
-    mutationFn: startScan,
+    mutationFn: (id: string) => startScan(id),
     onSuccess: () => (toast.info("Scan started"), refresh()),
     onError: onErr,
   });
   const hash = useMutation({
-    mutationFn: startHashing,
+    mutationFn: (id: string) => startHashing(id),
     onSuccess: () => (toast.info("Hashing duplicate candidates"), refresh()),
     onError: onErr,
   });

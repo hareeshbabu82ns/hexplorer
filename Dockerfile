@@ -1,4 +1,4 @@
-FROM node:21-alpine AS base
+FROM node:24-alpine AS base
 
 # Install dependencies only when needed
 FROM base AS deps
@@ -18,6 +18,8 @@ RUN \
 
 # Rebuild the source code only when needed
 FROM base AS builder
+# Prisma's query engine needs openssl to detect the platform
+RUN apk add --no-cache openssl
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
@@ -42,7 +44,7 @@ ENV NODE_ENV production
 
 # network remotes + backups: sshfs/sshpass (SSH), samba-client/cifs-utils (SMB), rsync
 # (mounting needs: --device /dev/fuse --cap-add SYS_ADMIN; cifs mounts need the container to run as root)
-RUN apk add --no-cache sshfs fuse3 openssh-client sshpass samba-client cifs-utils rsync
+RUN apk add --no-cache sshfs fuse3 openssh-client sshpass samba-client cifs-utils rsync openssl
 # Uncomment the following line in case you want to disable telemetry during runtime.
 # ENV NEXT_TELEMETRY_DISABLED 1
 
@@ -59,6 +61,9 @@ RUN chown nextjs:nodejs .next
 # https://nextjs.org/docs/advanced-features/output-file-tracing
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+
+# DB Management backups (DB_BACKUP_DIR defaults to ./data/backups): mount a volume here
+RUN mkdir -p /app/data/backups /app/db-backups && chown -R nextjs:nodejs /app/data /app/db-backups
 
 USER nextjs
 

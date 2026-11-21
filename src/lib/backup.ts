@@ -35,14 +35,14 @@ export async function resolveBackupPaths(b: BackupDoc) {
   } else {
     if (!b.dest.path || !path.isAbsolute(b.dest.path))
       throw new Error("Destination path must be absolute");
-    destRoot = path.resolve(b.dest.path);
+    destRoot = path.resolve(/*turbopackIgnore: true*/ b.dest.path);
   }
 
   const baseName = srcDir ? path.basename(srcAbs) : slugify(source.name);
   const target =
     b.mode === "snapshot"
-      ? path.join(destRoot, `${baseName}-${stamp()}`)
-      : path.join(destRoot, baseName);
+      ? path.join(/*turbopackIgnore: true*/ destRoot, `${baseName}-${stamp()}`)
+      : path.join(/*turbopackIgnore: true*/ destRoot, baseName);
 
   if (isInside(target, srcAbs)) throw new Error("Destination is inside the source");
   if (isInside(srcAbs, target)) throw new Error("Source is inside the destination");

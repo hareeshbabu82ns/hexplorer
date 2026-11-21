@@ -16,8 +16,8 @@ export { isJobRunning };
 /** resolve a user supplied folder path; relative paths are resolved against DATA_FOLDER */
 export function resolveFolderPath(p: string) {
   const trimmed = p.trim();
-  return path.resolve(
-    path.isAbsolute(trimmed) ? trimmed : path.join(config.dataFolder, trimmed),
+  return path.resolve(/*turbopackIgnore: true*/ 
+    path.isAbsolute(trimmed) ? trimmed : path.join(/*turbopackIgnore: true*/ config.dataFolder, trimmed),
   );
 }
 
@@ -57,7 +57,7 @@ export async function assertFolderOnline(folder: FolderDoc) {
 
 /** absolute path of an entry, guaranteed to stay inside the folder root */
 export function safeJoin(root: string, relPath: string) {
-  const abs = path.resolve(root, relPath);
+  const abs = path.resolve(/*turbopackIgnore: true*/ root, relPath);
   if (abs !== root && !abs.startsWith(root + path.sep)) {
     throw new Error(`path escapes folder root: ${relPath}`);
   }
@@ -211,7 +211,7 @@ export async function scanFolder(folder: FolderDoc, subDirIn = "") {
     };
 
     const walk = async (relDir: string) => {
-      const absDir = relDir ? path.join(folder.path, relDir) : folder.path;
+      const absDir = relDir ? path.join(/*turbopackIgnore: true*/ folder.path, relDir) : folder.path;
       let entries: import("fs").Dirent[];
       try {
         entries = await fs.readdir(absDir, { withFileTypes: true });
@@ -227,7 +227,7 @@ export async function scanFolder(folder: FolderDoc, subDirIn = "") {
         const relPath = relDir ? `${relDir}/${entry.name}` : entry.name;
         let stats: import("fs").Stats;
         try {
-          stats = await fs.stat(path.join(absDir, entry.name));
+          stats = await fs.stat(path.join(/*turbopackIgnore: true*/ absDir, entry.name));
         } catch {
           continue;
         }

@@ -77,7 +77,11 @@ function FilesExplorer() {
   };
 
   const [searchInput, setSearchInput] = useState(q);
-  useEffect(() => setSearchInput(q), [q]);
+  const [prevQ, setPrevQ] = useState(q);
+  if (q !== prevQ) {
+    setPrevQ(q);
+    setSearchInput(q);
+  }
   const debouncedSearch = useDebounceCallback((v: string) => setParams({ q: v }), {
     delay: 400,
   });
@@ -122,7 +126,13 @@ function FilesExplorer() {
   });
 
   const [selected, setSelected] = useState<Record<string, ExploreFile>>({});
-  useEffect(() => setSelected({}), [folderId, dir, q, page, sortBy, sortOrder]);
+  // clear the selection whenever the listing changes
+  const listingKey = JSON.stringify([folderId, dir, q, page, sortBy, sortOrder]);
+  const [prevListingKey, setPrevListingKey] = useState(listingKey);
+  if (listingKey !== prevListingKey) {
+    setPrevListingKey(listingKey);
+    setSelected({});
+  }
   const selectedList = useMemo(() => Object.values(selected), [selected]);
   const docs = data?.docs ?? [];
   const allChecked = docs.length > 0 && docs.every((d) => selected[d.id]);

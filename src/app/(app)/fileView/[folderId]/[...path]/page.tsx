@@ -7,11 +7,12 @@ import TextViewer from "../../_components/text-viewer";
 const TEXT_EXT = ["txt", "log", "json", "csv", "yml", "yaml", "xml", "ini", "conf", "sh", "js", "ts", "py"];
 const IMG_EXT = ["jpg", "jpeg", "png", "gif", "webp", "svg", "bmp"];
 
-export default function FileViewPage({
-  params,
-}: {
-  params: { folderId: string; path: string[] };
-}) {
+export default async function FileViewPage(
+  props: {
+    params: Promise<{ folderId: string; path: string[] }>;
+  }
+) {
+  const params = await props.params;
   const relPath = params.path.map((p) => decodeURIComponent(p)).join("/");
   const ext = relPath.split(".").pop()?.toLowerCase() ?? "";
   const dir = relPath.split("/").slice(0, -1).join("/");
