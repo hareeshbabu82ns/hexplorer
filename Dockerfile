@@ -43,31 +43,24 @@ WORKDIR /app
 ENV NODE_ENV production
 
 # network remotes + backups: sshfs/sshpass (SSH), samba-client/cifs-utils (SMB), rsync
-# (mounting needs: --device /dev/fuse --cap-add SYS_ADMIN --cap-add DAC_READ_SEARCH;
-#  cifs mounts run as root through a sudoers rule written by docker-entrypoint.sh)
-RUN apk add --no-cache sshfs fuse3 openssh-client sshpass samba-client cifs-utils rsync openssl su-exec sudo
+# (mounting needs: --device /dev/fuse --cap-add SYS_ADMIN --cap-add DAC_READ_SEARCH)
+RUN apk add --no-cache sshfs fuse3 openssh-client sshpass samba-client cifs-utils rsync openssl
 # Uncomment the following line in case you want to disable telemetry during runtime.
 # ENV NEXT_TELEMETRY_DISABLED 1
 
-RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nextjs
+# Trusted deployment: the whole container runs as root (no app user).
 
 COPY --from=builder /app/public ./public
 
-# Set the correct permission for prerender cache
-RUN mkdir .next
-RUN chown nextjs:nodejs .next
-
 # Automatically leverage output traces to reduce image size
 # https://nextjs.org/docs/advanced-features/output-file-tracing
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
 
 # DB Management backups (DB_BACKUP_DIR defaults to ./data/backups): mount a volume here
-RUN mkdir -p /app/data/backups /app/db-backups /home/nextjs && chown -R nextjs:nodejs /app/data /app/db-backups
+RUN mkdir -p /app/data/backups /app/db-backups
 
-# Starts as root to fix ownership of mounted volumes (PUID/PGID, default nextjs 1001:1001),
-# then drops to that user with su-exec. See docker-entrypoint.sh.
+# Creates the data folders and checks mount prerequisites. See docker-entrypoint.sh.
 COPY --chmod=755 docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 ENTRYPOINT ["docker-entrypoint.sh"]
 

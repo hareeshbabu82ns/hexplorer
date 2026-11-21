@@ -4,11 +4,8 @@ services:
   hexplorer:
     image: ghcr.io/hareeshbabu82ns/hexplorer:main
     container_name: hexplorer
-    # don't set `user:` - the entrypoint starts as root, fixes ownership of the
-    # mounted folders, then drops to PUID:PGID (match the owner of your host files)
+    # trusted deployment: the container runs as root
     environment:
-      PUID: "1026"
-      PGID: "100"
       #APP_URL: 'http://192.168.86.10:32010'
       APP_URL: "http://hexplorer.local"
       APP_SECRET: "3333xxx3333"
@@ -18,7 +15,7 @@ services:
       DATABASE_URL: "mongodb://user:password@mongo:27017/hexplorer?authSource=hexplorer"
       DATA_FOLDER: "/app/data"
       MOUNTS_FOLDER: "/app/data/mounts"
-      # DB Management backups; must be on a persistent volume writable by the app user
+      # DB Management backups; must be on a persistent volume
       DB_BACKUP_DIR: "/app/db-backups"
       # encrypts saved DB connection strings (defaults to BETTER_AUTH_SECRET)
       # DB_ADMIN_SECRET: "change-me-openssl-rand-hex-32"
@@ -38,7 +35,7 @@ services:
       - data:/app/data
       - db-backups:/app/db-backups
       # ssh keys / config used for remotes
-      - ~/.ssh:/home/nextjs/.ssh:ro
+      - ~/.ssh:/root/.ssh:ro
 
 volumes:
   db-backups:
