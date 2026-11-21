@@ -9,17 +9,22 @@ browse and de-duplicate files — even while the folders are offline.
   progress), per-folder stats. Ignore patterns live in Settings → Extras.
 - **Network remotes** (`/remotes`): SSH hosts (from `~/.ssh/config`, or host IP
   with SSH key **or user ID + password**) and SMB/Windows shares (host IP + user
-  ID + password). Browse remote folders and mount one as a data folder (`sshfs`
-  or `mount -t cifs`). The app mounts on demand and unmounts after a per-folder
-  idle timeout. Passwords are stored AES-256-GCM encrypted with `APP_SECRET`.
+  ID + password). Browse remote folders and add one as a data folder, either
+  **mounted** (`sshfs` or `mount -t cifs`; mounted on demand, unmounted after a
+  per-folder idle timeout) or with **direct access** — never mounted, files are
+  reached over plain `ssh` commands (one multiplexed connection) or `smbclient`,
+  so Files, Folders and Duplicates work without FUSE, root or container
+  capabilities. Switch an existing folder from its `…` menu on the Folders page.
+  Passwords are stored AES-256-GCM encrypted with `APP_SECRET`.
 - **Scan / hash at any level**: rescan or content-hash the whole folder or any
   sub folder (Files page toolbar for the current level, or the `…` menu on a
   directory row). Sub folder scans only touch index entries below that folder.
-- **Backups** (`/backups`): back up any folder or sub folder to another data
-  folder (local or remote mount) or a local path with rsync — *sync* (copy
-  new/changed), *mirror* (exact copy, deletes extras) or *snapshot* (new
-  timestamped copy per run). Jobs are saved and can be re-run; the copy can be
-  indexed in the destination folder automatically.
+- **Backups** (`/backups`): back up a data folder, a remote path (SSH / SMB,
+  mounted just for the run) or a local path to any of those with rsync —
+  *sync* (copy new/changed), *mirror* (exact copy, deletes extras) or
+  *snapshot* (new timestamped copy per run, optionally as a `.zip` file, keeping
+  the last N). Jobs run on demand or on an hourly / daily / weekly schedule
+  (server time); a copy in a data folder can be indexed automatically.
 - **Files** (`/files`): browse folder trees or search by name across one/all
   folders; sort by name, size, type, modified, created; multi-select delete.
 - **Duplicates** (`/duplicates`): group by name+size, similar name+size
@@ -39,7 +44,7 @@ browse and de-duplicate files — even while the folders are offline.
 Browsing, search and duplicate detection read only from MongoDB, so they work
 when a share is unmounted or unreachable. Disk is touched only by scan, hash,
 file preview/download and delete; those first check the folder is reachable
-(mounting it if it is an SSH remote). An empty folder root that is indexed with
+(mounting it if it is a mounted remote). An empty folder root that is indexed with
 entries is treated as "not mounted", so a scan never wipes the index, and
 deletes never drop index rows for an offline folder.
 
@@ -88,7 +93,10 @@ echo "APP_SECRET=$(openssl rand -hex 32)" >> .env   # needed for password logins
 
 Then add the remote in the app (SSH key login additionally needs
 `ssh-copy-id user@host`). SMB mounts need root, or the sudoers rule that
-`setup.sh` installs for a non-root app user. Helper scripts for manual use:
+`setup.sh` installs for a non-root app user. Direct access needs none of that:
+only `ssh`/`sshpass` (SSH; the remote needs `find`, `stat`, `cat`, `sha1sum` —
+GNU or busybox) or `smbclient` (SMB). Backups of a direct folder still mount
+it for the rsync run. Helper scripts for manual use:
 
 - `scripts/ubuntu/mount-remote.sh <[user@]host> <remote-path> <mount-point> [port]` (`SSH_PASSWORD=…` for password login)
 - `sudo scripts/ubuntu/mount-smb.sh <host-ip> <share[/dir]> <mount-point> <user> [domain] [vers]`

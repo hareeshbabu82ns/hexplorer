@@ -4,7 +4,7 @@ import fs from "fs/promises";
 import path from "path";
 
 import { collections, FolderDoc, RemoteDoc, SshKeyDoc, toObjectId } from "@/lib/db";
-import { background } from "@/lib/jobs";
+import { background, isJobRunning } from "@/lib/jobs";
 import {
   isMounted,
   listRemoteDir,
@@ -17,6 +17,7 @@ import {
   testRemote,
   unmountFolder,
 } from "@/lib/mounts";
+import { remoteFs } from "@/lib/folder-fs";
 import { scanFolder } from "@/lib/scanner";
 import { encryptSecret } from "@/lib/secrets";
 import { forgetKeyFiles, parsePrivateKey } from "@/lib/ssh-keys";
@@ -111,6 +112,13 @@ async function deleteRemoteImpl(id: string) {
     "mount.remoteId": toObjectId(id),
   });
   if (used) throw new Error(`Remote is used by ${used} data folder(s); remove them first`);
+  const { backups } = await collections();
+  const rid = toObjectId(id);
+  const jobs = await backups
+    .find({ $or: [{ "source.remoteId": rid }, { "dest.remoteId": rid }] }, { projection: { name: 1 } })
+    .toArray();
+  if (jobs.length)
+    throw new Error(`Remote is used by backup job(s) ${jobs.map((j) => j.name).join(", ")}; change them first`);
   await remotes.deleteOne({ _id: toObjectId(id) });
 }
 
@@ -134,27 +142,41 @@ export async function browseRemote(id: string, remotePath: string) {
   return attempt(async () => listRemoteDir(await getRemoteDoc(id), remotePath));
 }
 
-/** mount remotePath of a remote under the mounts root and register it as a data folder */
+/** label stored in `path` for direct folders (unique per remote + path, never touched on disk) */
+function directLabel(remote: RemoteDoc, remotePath: string) {
+  return `${remote.type === "smb" ? "smb" : "ssh"}://${remote.name}${remotePath.startsWith("/") ? "" : "/~/"}${remotePath.replace(/^~\/?/, "")}`;
+}
+
+const mountPointFor = (remote: RemoteDoc, name: string) =>
+  path.join(/*turbopackIgnore: true*/ mountsRoot(), slugify(`${remote.name}-${name}`));
+
+/**
+ * Register remotePath of a remote as a data folder: mounted under the mounts root
+ * (access "mount"), or reached over ssh / smbclient without any mount ("direct").
+ */
 async function addMountedFolderImpl(input: {
   remoteId: string;
   remotePath: string;
   name: string;
   idleMinutes: number;
   scan?: boolean;
+  access?: "mount" | "direct";
 }): Promise<string> {
   const remote = await getRemoteDoc(input.remoteId);
   if (remote.type === "smb" && !input.remotePath.split("/").filter(Boolean).length)
-    throw new Error("Open a share first — the share list itself cannot be mounted");
+    throw new Error("Open a share first — the share list itself cannot be added");
+  const direct = input.access === "direct";
   const name = input.name.trim() || path.posix.basename(input.remotePath) || remote.name;
-  const mountPoint = path.join(/*turbopackIgnore: true*/ mountsRoot(), slugify(`${remote.name}-${name}`));
+  const folderPath = direct ? directLabel(remote, input.remotePath) : mountPointFor(remote, name);
   const { folders } = await collections();
-  if (await folders.findOne({ path: mountPoint }))
-    throw new Error(`A data folder already uses ${mountPoint}`);
-  await fs.mkdir(mountPoint, { recursive: true });
+  if (await folders.findOne({ path: folderPath }))
+    throw new Error(`A data folder already uses ${folderPath}`);
+  if (direct) await remoteFs(remote, input.remotePath).listRoot(); // fail fast when unreachable
+  else await fs.mkdir(folderPath, { recursive: true });
 
   const doc: Omit<FolderDoc, "_id"> = {
     name,
-    path: mountPoint,
+    path: folderPath,
     createdAt: new Date(),
     status: "idle",
     fileCount: 0,
@@ -164,17 +186,20 @@ async function addMountedFolderImpl(input: {
       type: mountTypeFor(remote),
       remoteId: remote._id,
       remotePath: input.remotePath,
-      idleMinutes: Math.max(0, Number(input.idleMinutes) || 0),
+      idleMinutes: direct ? 0 : Math.max(0, Number(input.idleMinutes) || 0),
+      access: direct ? "direct" : "mount",
     },
     lastUsedAt: new Date(),
   };
   const res = await folders.insertOne(doc as FolderDoc);
   const folder = { ...doc, _id: res.insertedId } as FolderDoc;
-  try {
-    await mountFolder(folder);
-  } catch (e) {
-    await folders.deleteOne({ _id: res.insertedId });
-    throw e;
+  if (!direct) {
+    try {
+      await mountFolder(folder);
+    } catch (e) {
+      await folders.deleteOne({ _id: res.insertedId });
+      throw e;
+    }
   }
   if (input.scan !== false) {
     await folders.updateOne({ _id: folder._id }, { $set: { status: "scanning", progress: 0 } });
@@ -183,10 +208,43 @@ async function addMountedFolderImpl(input: {
   return res.insertedId.toHexString();
 }
 
+/** switch a remote data folder between mounting and direct (unmounted) access; the index is kept */
+async function setFolderAccessImpl(folderId: string, access: "mount" | "direct") {
+  const { folders } = await collections();
+  const folder = await folders.findOne({ _id: toObjectId(folderId) });
+  if (!folder?.mount) throw new Error("Not a remote data folder");
+  const current = folder.mount.access ?? "mount";
+  if (current === access) return;
+  if (isJobRunning(folderId)) throw new Error("A scan/hash/backup job is using this folder");
+  const remote = await getRemoteDoc(folder.mount.remoteId.toHexString());
+
+  if (access === "direct") {
+    await remoteFs(remote, folder.mount.remotePath).listRoot(); // reachable without a mount?
+    await unmountFolder(folder);
+    await fs.rmdir(folder.path).catch(() => {}); // the empty mount point
+    const label = directLabel(remote, folder.mount.remotePath);
+    if (await folders.findOne({ path: label, _id: { $ne: folder._id } }))
+      throw new Error(`A data folder already uses ${label}`);
+    await folders.updateOne(
+      { _id: folder._id },
+      { $set: { path: label, "mount.access": "direct", "mount.idleMinutes": 0 } },
+    );
+  } else {
+    const mp = mountPointFor(remote, folder.name);
+    if (await folders.findOne({ path: mp, _id: { $ne: folder._id } }))
+      throw new Error(`A data folder already uses ${mp}`);
+    await fs.mkdir(mp, { recursive: true });
+    const next = { ...folder, path: mp, mount: { ...folder.mount, access: "mount" as const } };
+    await mountFolder(next); // throws (and changes nothing) when mounting is not possible here
+    await folders.updateOne({ _id: folder._id }, { $set: { path: mp, "mount.access": "mount" } });
+  }
+}
+
 export async function setFolderMounted(folderId: string, mounted: boolean) {
   const { folders } = await collections();
   const folder = await folders.findOne({ _id: toObjectId(folderId) });
   if (!folder?.mount) throw new Error("Not a mounted folder");
+  if (folder.mount.access === "direct") throw new Error("This folder uses direct access and is never mounted");
   if (mounted) {
     await mountFolder(folder);
     await folders.updateOne({ _id: folder._id }, { $set: { lastUsedAt: new Date() } });
@@ -297,8 +355,13 @@ export async function addMountedFolder(input: {
   name: string;
   idleMinutes: number;
   scan?: boolean;
+  access?: "mount" | "direct";
 }) {
   return attempt(() => addMountedFolderImpl(input));
+}
+
+export async function setFolderAccess(folderId: string, access: "mount" | "direct") {
+  return attempt(() => setFolderAccessImpl(folderId, access));
 }
 
 export async function uploadSshKey(input: {

@@ -23,6 +23,12 @@ export interface FolderDoc {
     remotePath: string;
     /** unmount after this many idle minutes (0 = never) */
     idleMinutes: number;
+    /**
+     * "mount" (default): sshfs/cifs mount at `path`.
+     * "direct": never mounted; files are reached over ssh commands / smbclient
+     * (no FUSE, root or container capabilities needed). `path` is then only a label.
+     */
+    access?: "mount" | "direct";
   } | null;
   /** last time the folder was accessed on disk (for idle unmount) */
   lastUsedAt?: Date | null;
@@ -68,17 +74,48 @@ export interface SshKeyDoc {
 
 export type BackupMode = "sync" | "mirror" | "snapshot";
 
+/** where a backup reads from / writes to */
+export type BackupEndpointDoc =
+  | { kind: "folder"; folderId: ObjectId; dir: string }
+  /** remote path; mounted just for the run (ssh: "" = home, smb: /share/sub) */
+  | { kind: "remote"; remoteId: ObjectId; path: string }
+  /** absolute path on the server */
+  | { kind: "local"; path: string };
+
+/** pre-endpoint docs: source {folderId, dir}, dest {folderId, dir} or {path} */
+export type LegacyBackupEndpoint = {
+  kind?: undefined;
+  folderId?: ObjectId | null;
+  dir?: string;
+  path?: string | null;
+};
+
+export type BackupScheduleDoc = {
+  type: "off" | "hourly" | "daily" | "weekly";
+  /** minute of the hour (0-59) */
+  minute: number;
+  /** hour of the day (0-23), daily/weekly */
+  hour: number;
+  /** 0 = Sunday … 6 = Saturday, weekly */
+  weekday: number;
+};
+
 export interface BackupDoc {
   _id: ObjectId;
   name: string;
-  source: { folderId: ObjectId; dir: string };
-  /** either a data folder (+ sub dir) or an absolute local path */
-  dest: { folderId?: ObjectId | null; dir?: string; path?: string | null };
+  source: BackupEndpointDoc | LegacyBackupEndpoint;
+  dest: BackupEndpointDoc | LegacyBackupEndpoint;
   mode: BackupMode;
   /** comma separated rsync exclude patterns */
   exclude?: string | null;
   /** rescan the destination data folder after a successful run */
   rescanDest: boolean;
+  /** snapshot mode: keep this many snapshots, delete older ones (0/null = keep all) */
+  keep?: number | null;
+  /** snapshot mode: store each snapshot as <name>-<stamp>.zip instead of a folder */
+  archive?: "zip" | null;
+  schedule?: BackupScheduleDoc | null;
+  nextRunAt?: Date | null;
   createdAt: Date;
   status: "idle" | "running" | "error" | "warning" | "success";
   progress?: number | null;
@@ -87,6 +124,8 @@ export interface BackupDoc {
     finishedAt?: Date | null;
     target?: string;
     message?: string | null;
+    /** "manual" | "schedule" */
+    trigger?: string;
   } | null;
 }
 

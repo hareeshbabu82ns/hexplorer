@@ -7,12 +7,24 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { Label } from "@/components/ui/label";
-import { BackupDialog, BackupSource } from "@/components/explorer/backup-dialog";
-import { FolderSelect } from "@/components/explorer/folder-select";
-import { deleteBackup, listBackups, runBackupNow } from "@/lib/actions/backups";
+import { BackupDialog, BackupSource, describeSchedule } from "@/components/explorer/backup-dialog";
+import { deleteBackup, listBackups, runBackupNow, setBackupScheduleEnabled } from "@/lib/actions/backups";
 import { EmptyState, ErrorBanner, Page, PageHeader, SectionTitle } from "@/components/app/page";
-import { Archive, ArrowDown, Clock, Loader2, Play, Plus, Trash2 } from "lucide-react";
+import {
+  Archive,
+  ArrowDown,
+  CalendarClock,
+  Clock,
+  Folder,
+  HardDrive,
+  Loader2,
+  Pause,
+  Pencil,
+  Play,
+  Plus,
+  Server,
+  Trash2,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const STATUS: Record<BackupJob["status"], "info" | "success" | "destructive" | "outline" | "warning"> = {
@@ -26,7 +38,6 @@ const STATUS: Record<BackupJob["status"], "info" | "success" | "destructive" | "
 export default function BackupsPage() {
   const qc = useQueryClient();
   const [source, setSource] = useState<BackupSource>(null);
-  const [newFolder, setNewFolder] = useState<string | undefined>();
   const {
     data: jobs,
     isLoading,
@@ -42,6 +53,11 @@ export default function BackupsPage() {
     onSuccess: () => (toast.info("Backup started"), refresh()),
     onError: (e: any) => toast.error(e.message),
   });
+  const pause = useMutation({
+    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) => setBackupScheduleEnabled(id, enabled),
+    onSuccess: (_, v) => (toast.success(v.enabled ? "Schedule resumed" : "Schedule paused"), refresh()),
+    onError: (e: any) => toast.error(e.message),
+  });
   const del = useMutation({
     mutationFn: deleteBackup,
     onSuccess: () => (toast.success("Backup job deleted"), refresh()),
@@ -55,8 +71,8 @@ export default function BackupsPage() {
         title="Backups"
         description={
           <>
-            Back up any data folder or sub folder to another data folder (local or a mounted remote) or a
-            local path. Start one here, or from the folder actions on the{" "}
+            Back up data folders, remote paths (SSH / SMB, mounted just for the run) or local paths to any
+            of those, on demand or on a schedule. Start one here, or from the folder actions on the{" "}
             <Link href="/files" className="text-foreground underline-offset-4 hover:underline">
               Files
             </Link>{" "}
@@ -65,18 +81,11 @@ export default function BackupsPage() {
         }
       />
 
-      <section className="surface flex flex-wrap items-end gap-3 p-5">
-        <div className="grid gap-1.5">
-          <Label className="text-[13px]">Back up a whole folder</Label>
-          <FolderSelect value={newFolder} onChange={setNewFolder} />
-        </div>
-        <Button
-          disabled={!newFolder}
-          onClick={() => newFolder && setSource({ folderId: newFolder, dir: "" })}
-        >
+      <div className="flex">
+        <Button onClick={() => setSource({ blank: true })}>
           <Plus className="size-4" /> New backup…
         </Button>
-      </section>
+      </div>
 
       <section className="space-y-4">
         <SectionTitle title="Jobs" description={jobs ? `${jobs.length} configured` : undefined} />
@@ -92,7 +101,7 @@ export default function BackupsPage() {
           <EmptyState
             icon={Archive}
             title="No backup jobs yet"
-            description="Pick a folder above to create your first rsync backup."
+            description="Create a job to back up a folder or remote with rsync."
           />
         )}
 
@@ -112,28 +121,42 @@ export default function BackupsPage() {
                     </Badge>
                   </div>
                   <div className="text-muted-foreground mt-0.5 text-xs capitalize">
-                    {j.mode} mode{j.exclude ? ` · exclude ${j.exclude}` : ""}
+                    {j.mode} mode{j.archive === "zip" ? " (zip)" : ""}
+                    {j.mode === "snapshot" && j.keep ? ` · keep ${j.keep}` : ""}
+                    {j.exclude ? ` · exclude ${j.exclude}` : ""}
                   </div>
                 </div>
               </div>
 
               <div className="bg-muted/40 grid gap-1 rounded-lg border p-3 font-mono text-xs">
-                <div className="truncate">
-                  <span className="text-muted-foreground font-sans">From </span>
-                  {j.source.folderName}/{j.source.dir}
+                <div className="flex min-w-0 items-center gap-1.5" title={j.sourceLabel}>
+                  <span className="text-muted-foreground w-9 shrink-0 font-sans">From</span>
+                  <KindIcon kind={j.source.kind} />
+                  <span className="truncate">{j.sourceLabel}</span>
                 </div>
                 <ArrowDown className="text-muted-foreground size-3.5" />
-                <div className="truncate">
-                  <span className="text-muted-foreground font-sans">To </span>
-                  {j.dest.folderId ? `${j.dest.folderName}/${j.dest.dir}` : j.dest.path}
+                <div className="flex min-w-0 items-center gap-1.5" title={j.destLabel}>
+                  <span className="text-muted-foreground w-9 shrink-0 font-sans">To</span>
+                  <KindIcon kind={j.dest.kind} />
+                  <span className="truncate">{j.destLabel}</span>
                 </div>
               </div>
 
+              {j.schedule && (
+                <div className="flex items-center gap-1.5 text-xs">
+                  <CalendarClock className="text-muted-foreground size-3.5" />
+                  <span>{describeSchedule(j.schedule)}</span>
+                  <span className="text-muted-foreground">
+                    {j.nextRunAt ? `· next ${new Date(j.nextRunAt).toLocaleString()}` : "· paused"}
+                  </span>
+                </div>
+              )}
               {j.status === "running" && <Progress value={j.progress ?? 0} className="h-1.5" />}
               {j.lastRun && (
                 <div className="text-muted-foreground flex items-center gap-1.5 text-xs">
                   <Clock className="size-3.5" />
                   Last run {new Date(j.lastRun.startedAt).toLocaleString()}
+                  {j.lastRun.trigger === "schedule" && " (scheduled)"}
                   {j.lastRun.finishedAt &&
                     ` · ${Math.round(
                       (new Date(j.lastRun.finishedAt).getTime() - new Date(j.lastRun.startedAt).getTime()) /
@@ -164,6 +187,25 @@ export default function BackupsPage() {
                 </Button>
                 <Button
                   size="sm"
+                  variant="outline"
+                  disabled={j.status === "running"}
+                  onClick={() => setSource({ job: j })}
+                >
+                  <Pencil className="size-4" /> Edit
+                </Button>
+                {j.schedule && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={pause.isPending}
+                    onClick={() => pause.mutate({ id: j.id, enabled: !j.nextRunAt })}
+                  >
+                    {j.nextRunAt ? <Pause className="size-4" /> : <CalendarClock className="size-4" />}
+                    {j.nextRunAt ? "Pause" : "Resume"}
+                  </Button>
+                )}
+                <Button
+                  size="sm"
                   variant="ghost"
                   className="text-muted-foreground hover:text-destructive ml-auto"
                   disabled={j.status === "running"}
@@ -179,4 +221,9 @@ export default function BackupsPage() {
       <BackupDialog source={source} onClose={() => setSource(null)} />
     </Page>
   );
+}
+
+function KindIcon({ kind }: { kind: BackupEndpoint["kind"] }) {
+  const Icon = kind === "folder" ? Folder : kind === "remote" ? Server : HardDrive;
+  return <Icon className="text-muted-foreground size-3.5 shrink-0" />;
 }

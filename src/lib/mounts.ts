@@ -68,7 +68,7 @@ export function slugify(s: string) {
 }
 
 /** quote a string for a POSIX remote shell */
-function shq(s: string) {
+export function shq(s: string) {
   return `'${s.replace(/'/g, `'\\''`)}'`;
 }
 
@@ -115,9 +115,16 @@ async function identityPath(r: RemoteDoc): Promise<string | null> {
 export async function sshCommand(
   r: RemoteDoc,
   remoteCmd: string,
+  opts: { multiplex?: boolean } = {},
 ): Promise<{ cmd: string; args: string[]; env?: Record<string, string> }> {
   const args: string[] = [];
   for (const o of sshOpts(r)) args.push("-o", o);
+  if (opts.multiplex) {
+    // reuse one connection for the many short commands of direct (unmounted) access
+    const dir = path.join(/*turbopackIgnore: true*/ os.tmpdir(), `hx-ssh-${process.getuid?.() ?? 0}`);
+    await fs.mkdir(dir, { recursive: true, mode: 0o700 });
+    args.push("-o", "ControlMaster=auto", "-o", `ControlPath=${dir}/%C`, "-o", "ControlPersist=120");
+  }
   if (r.port) args.push("-p", String(r.port));
   const identity = await identityPath(r);
   if (identity) args.push("-i", identity, "-o", "IdentitiesOnly=yes");
@@ -159,7 +166,7 @@ export async function sshConfigHosts(): Promise<string[]> {
 /* ----------------------------------- SMB ---------------------------------- */
 
 /** temp credentials file (0600) for smbclient -A / mount.cifs credentials= */
-async function withSmbCreds<T>(r: RemoteDoc, fn: (credFile: string) => Promise<T>): Promise<T> {
+export async function withSmbCreds<T>(r: RemoteDoc, fn: (credFile: string) => Promise<T>): Promise<T> {
   const dir = await fs.mkdtemp(path.join(/*turbopackIgnore: true*/ os.tmpdir(), "hx-smb-"));
   const file = path.join(/*turbopackIgnore: true*/ dir, "creds");
   const lines = [`username=${r.user || "guest"}`, `password=${password(r)}`];
@@ -172,14 +179,14 @@ async function withSmbCreds<T>(r: RemoteDoc, fn: (credFile: string) => Promise<T
   }
 }
 
-function smbBaseArgs(r: RemoteDoc, credFile: string) {
+export function smbBaseArgs(r: RemoteDoc, credFile: string) {
   const args = ["-A", credFile, "-m", "SMB3"];
   if (r.port) args.push("-p", String(r.port));
   return args;
 }
 
 /** split "/share/sub/dir" → ["share", "sub/dir"] */
-function splitSmbPath(p: string): [string, string] {
+export function splitSmbPath(p: string): [string, string] {
   const parts = p.split("/").filter(Boolean);
   return [parts[0] ?? "", parts.slice(1).join("/")];
 }
@@ -323,21 +330,26 @@ async function mountCifs(remote: RemoteDoc, remotePath: string, mountPoint: stri
   });
 }
 
+/** mount remotePath of a remote at mountPoint (sshfs or cifs depending on the remote type) */
+export async function mountRemoteAt(remote: RemoteDoc, remotePath: string, mountPoint: string) {
+  await fs.mkdir(mountPoint, { recursive: true });
+  try {
+    if (mountTypeFor(remote) === "cifs") await mountCifs(remote, remotePath, mountPoint);
+    else await mountSshfs(remote, remotePath, mountPoint);
+  } catch (e: any) {
+    throw new Error(`mount of ${remote.name}:${remotePath || "~"} failed: ${e.message}`);
+  }
+}
+
 export async function mountFolder(folder: FolderDoc) {
-  if (!folder.mount) return;
+  if (!folder.mount || folder.mount.access === "direct") return;
   const key = folder._id.toHexString();
   const pending = mountLocks.get(key);
   if (pending) return pending;
   const p = (async () => {
     if (await isMounted(folder.path)) return;
     const remote = await getRemote(folder.mount!.remoteId);
-    await fs.mkdir(folder.path, { recursive: true });
-    try {
-      if (folder.mount!.type === "cifs") await mountCifs(remote, folder.mount!.remotePath, folder.path);
-      else await mountSshfs(remote, folder.mount!.remotePath, folder.path);
-    } catch (e: any) {
-      throw new Error(`mount of ${remote.name}:${folder.mount!.remotePath} failed: ${e.message}`);
-    }
+    await mountRemoteAt(remote, folder.mount!.remotePath, folder.path);
     console.log(`mounted ${remote.name}:${folder.mount!.remotePath} -> ${folder.path}`);
     startIdleReaper();
   })().finally(() => mountLocks.delete(key));
@@ -352,29 +364,35 @@ export function mountTypeFor(r: RemoteDoc): "sshfs" | "cifs" {
 
 export { usesPassword };
 
-export async function unmountFolder(folder: FolderDoc) {
-  if (!(await isMounted(folder.path))) return;
-  if (isJobRunning(folder._id.toHexString()))
-    throw new Error("A scan/hash/backup job is using this folder");
+/** unmount an sshfs/cifs mount point (no-op when not mounted) */
+export async function unmountPath(mountPoint: string, type: "sshfs" | "cifs") {
+  if (!(await isMounted(mountPoint))) return;
   const attempts: [string, string[]][] =
-    folder.mount?.type === "cifs"
-      ? [asRoot("umount", [folder.path])]
+    type === "cifs"
+      ? [asRoot("umount", [mountPoint])]
       : [
-          ["fusermount3", ["-u", folder.path]],
-          ["fusermount", ["-u", folder.path]],
-          asRoot("umount", [folder.path]),
+          ["fusermount3", ["-u", mountPoint]],
+          ["fusermount", ["-u", mountPoint]],
+          asRoot("umount", [mountPoint]),
         ];
   let lastErr: any;
   for (const [cmd, args] of attempts) {
     try {
       await run(cmd, args, { timeout: 15000 });
-      console.log(`unmounted ${folder.path}`);
+      console.log(`unmounted ${mountPoint}`);
       return;
     } catch (e: any) {
       lastErr = e;
     }
   }
   throw new Error(`unmount failed: ${lastErr?.message ?? ""}`);
+}
+
+export async function unmountFolder(folder: FolderDoc) {
+  if (folder.mount?.access === "direct" || !(await isMounted(folder.path))) return;
+  if (isJobRunning(folder._id.toHexString()))
+    throw new Error("A scan/hash/backup job is using this folder");
+  await unmountPath(folder.path, folder.mount?.type === "cifs" ? "cifs" : "sshfs");
 }
 
 /** mount if needed — called before any disk access on a mounted folder */
@@ -401,7 +419,7 @@ export function startIdleReaper() {
     try {
       const { folders } = await collections();
       const mounted = await folders
-        .find({ "mount.idleMinutes": { $gt: 0 } })
+        .find({ "mount.idleMinutes": { $gt: 0 }, "mount.access": { $ne: "direct" } })
         .toArray();
       for (const f of mounted) {
         if (isJobRunning(f._id.toHexString()) || mountLocks.has(f._id.toHexString())) continue;

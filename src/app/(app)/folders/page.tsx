@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { FOLDERS_KEY, useFolders } from "@/components/explorer/use-folders";
 import { addFolder, checkFolderOnline, removeFolder, startHashing, startScan } from "@/lib/actions/folders";
-import { setFolderMounted } from "@/lib/actions/remotes";
+import { setFolderAccess, setFolderMounted } from "@/lib/actions/remotes";
 import { BackupDialog, BackupSource } from "@/components/explorer/backup-dialog";
 import {
   DropdownMenu,
@@ -33,6 +33,7 @@ import {
 import { EmptyState, ErrorBanner, Metric, Page, PageHeader, SectionTitle } from "@/components/app/page";
 import {
   Activity,
+  ArrowLeftRight,
   Archive,
   Copy,
   FingerprintPattern,
@@ -106,6 +107,16 @@ export default function FoldersPage() {
   const mountToggle = useMutation({
     mutationFn: ({ id, on }: { id: string; on: boolean }) => setFolderMounted(id, on),
     onSuccess: (mounted) => (toast.success(mounted ? "Mounted" : "Unmounted"), refresh()),
+    onError: onErr,
+  });
+  const access = useMutation({
+    mutationFn: async ({ id, to }: { id: string; to: "mount" | "direct" }) => {
+      const r = await setFolderAccess(id, to);
+      if (!r.ok) throw new Error(r.error);
+      return to;
+    },
+    onSuccess: (to) =>
+      (toast.success(to === "direct" ? "Switched to direct access (no mount)" : "Switched to mounting"), refresh()),
     onError: onErr,
   });
   const check = useMutation({
@@ -245,6 +256,15 @@ export default function FoldersPage() {
                       <DropdownMenuItem disabled={check.isPending} onClick={() => check.mutate(f.id)}>
                         <Activity className="mr-2 size-4" /> Check online
                       </DropdownMenuItem>
+                      {f.mount && (
+                        <DropdownMenuItem
+                          disabled={busy || access.isPending}
+                          onClick={() => access.mutate({ id: f.id, to: f.mount!.direct ? "mount" : "direct" })}
+                        >
+                          <ArrowLeftRight className="mr-2 size-4" />
+                          {f.mount.direct ? "Switch to mounting" : "Switch to direct access"}
+                        </DropdownMenuItem>
+                      )}
                       <DropdownMenuSeparator />
                       <DropdownMenuItem
                         disabled={busy}
@@ -264,7 +284,18 @@ export default function FoldersPage() {
                 </div>
 
                 <div className="flex flex-1 flex-col gap-3 p-5 pt-4">
-                  {f.mount && (
+                  {f.mount?.direct && (
+                    <div className="flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 text-xs">
+                      <span className="bg-info size-2 rounded-full" />
+                      <span className="font-medium">Direct</span>
+                      <span className="text-muted-foreground min-w-0 truncate font-mono">
+                        {f.mount.remoteName}:{f.mount.remotePath || "~"}
+                      </span>
+                      <span className="grow" />
+                      <span className="text-muted-foreground">no mount · over {f.path.startsWith("smb") ? "smbclient" : "ssh"}</span>
+                    </div>
+                  )}
+                  {f.mount && !f.mount.direct && (
                     <div className="flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 text-xs">
                       <span className="relative flex size-2">
                         <span
@@ -302,6 +333,7 @@ export default function FoldersPage() {
                           (f.lastScanDurationMs ? ` · ${(f.lastScanDurationMs / 1000).toFixed(1)}s` : "")
                         : "Never scanned"}
                       {f.mount &&
+                        !f.mount.direct &&
                         ` · ${f.mount.idleMinutes ? `idle unmount ${f.mount.idleMinutes}m` : "stays mounted"}`}
                     </span>
                     <Button size="sm" variant="outline" asChild>

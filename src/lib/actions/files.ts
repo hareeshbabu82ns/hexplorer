@@ -1,11 +1,9 @@
 "use server";
 
-import fs from "fs/promises";
 import { Filter, ObjectId } from "mongodb";
 import { collections, escapeRegex, FileDoc, FolderDoc, toObjectId } from "@/lib/db";
 import {
   assertFolderOnline,
-  safeJoin,
   unhashedCandidates,
   updateFolderStats,
   withTimeout,
@@ -216,8 +214,9 @@ export async function deleteFiles(ids: string[]): Promise<DeleteResult> {
       );
       continue;
     }
+    let fsx: Awaited<ReturnType<typeof assertFolderOnline>>;
     try {
-      await assertFolderOnline(folder);
+      fsx = await assertFolderOnline(folder);
     } catch (e: any) {
       items.forEach((d) =>
         result.failed.push({ id: d._id.toHexString(), relPath: d.relPath, error: e.message }),
@@ -227,18 +226,8 @@ export async function deleteFiles(ids: string[]): Promise<DeleteResult> {
 
     for (const d of items) {
       try {
-        const abs = safeJoin(folder.path, d.relPath);
-        if (abs === folder.path) throw new Error("refusing to delete folder root");
-        try {
-          await withTimeout(
-            fs.rm(abs, { recursive: d.isDirectory, force: false }),
-            60000,
-            "delete",
-          );
-        } catch (e: any) {
-          // already gone on disk (root is online, verified above) → just drop from index
-          if (e.code !== "ENOENT") throw e;
-        }
+        // a missing entry is fine (root is online, verified above) → just drop it from the index
+        await withTimeout(fsx.rm(d.relPath, d.isDirectory), 10 * 60_000, "delete");
         if (d.isDirectory) {
           await files.deleteMany({
             folderId: d.folderId,

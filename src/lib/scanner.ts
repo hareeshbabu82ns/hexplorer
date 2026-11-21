@@ -1,13 +1,11 @@
-import crypto from "crypto";
-import { createReadStream } from "fs";
-import fs from "fs/promises";
 import path from "path";
 import { AnyBulkWriteOperation, ObjectId } from "mongodb";
 import config from "@/config/config";
 import { C_EXPLORER_DOMAIN, C_EXPLORER_IGNORE_FILE_PATTERNS } from "./constants";
 import { belowDir, collections, FileDoc, FolderDoc, normDir } from "./db";
 import { isJobRunning, runningJobs } from "./jobs";
-import { ensureMounted, touchFolder } from "./mounts";
+import { folderFs, FolderFs, FsEntry } from "./folder-fs";
+import { touchFolder } from "./mounts";
 
 const BATCH_SIZE = 500;
 
@@ -33,26 +31,27 @@ export function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise
 }
 
 /**
- * Make sure the folder root is reachable before touching disk. Accessing an
- * autofs path here triggers the mount. An existing-but-empty root while the
- * index has entries is treated as "not mounted".
+ * Make sure the folder root is reachable before touching it, and return the file
+ * access for it. Mount-mode remotes are mounted here; accessing an autofs path
+ * triggers its mount. An existing-but-empty root while the index has entries is
+ * treated as "not mounted".
  */
-export async function assertFolderOnline(folder: FolderDoc) {
+export async function assertFolderOnline(folder: FolderDoc): Promise<FolderFs> {
   let entries: string[];
-  if (folder.mount) await ensureMounted(folder);
+  let fsx: FolderFs;
   try {
-    const st = await withTimeout(fs.stat(folder.path), 15000, "folder access");
-    if (!st.isDirectory()) throw new Error("not a directory");
-    entries = await withTimeout(fs.readdir(folder.path), 15000, "folder listing");
+    fsx = await folderFs(folder);
+    entries = await withTimeout(fsx.listRoot(), 30000, "folder listing");
   } catch (e: any) {
     throw new Error(`Folder "${folder.name}" is offline (${folder.path}): ${e.message}`);
   }
   if (entries.length === 0 && (folder.fileCount > 0 || folder.dirCount > 0)) {
     throw new Error(
-      `Folder "${folder.name}" is empty on disk but indexed with entries — probably not mounted (${folder.path})`,
+      `Folder "${folder.name}" is empty but indexed with entries — probably not mounted (${folder.path})`,
     );
   }
   void touchFolder(folder);
+  return fsx;
 }
 
 /** absolute path of an entry, guaranteed to stay inside the folder root */
@@ -135,11 +134,11 @@ function upsertOp(
   folder: FolderDoc,
   relDir: string,
   name: string,
-  stats: import("fs").Stats,
+  stats: FsEntry,
   scanId: string,
 ): AnyBulkWriteOperation<FileDoc> {
   const relPath = relDir ? `${relDir}/${name}` : name;
-  const isDirectory = stats.isDirectory();
+  const isDirectory = stats.isDirectory;
   const size = isDirectory ? 0 : stats.size;
   const modifiedDate = stats.mtime;
   return {
@@ -204,7 +203,7 @@ export async function scanFolder(folder: FolderDoc, subDirIn = "") {
   );
 
   try {
-    await assertFolderOnline(folder);
+    const fsx = await assertFolderOnline(folder);
     const ignore = await loadIgnorePatterns();
     let batch: AnyBulkWriteOperation<FileDoc>[] = [];
 
@@ -216,51 +215,35 @@ export async function scanFolder(folder: FolderDoc, subDirIn = "") {
       await folders.updateOne({ _id: folder._id }, { $set: { progress: processed } });
     };
 
+    // ignored names are skipped together with everything below them
+    const ignored = (relDir: string, name: string) =>
+      ignore.length > 0 &&
+      [...(relDir ? relDir.split("/") : []), name].some((seg) => ignore.some((re) => re.test(seg)));
     const walk = async (relDir: string) => {
-      const absDir = relDir ? path.join(/*turbopackIgnore: true*/ folder.path, relDir) : folder.path;
-      let entries: import("fs").Dirent[];
-      try {
-        entries = await fs.readdir(absDir, { withFileTypes: true });
-      } catch (e: any) {
-        console.warn("cannot read dir", absDir, e.message);
-        readErrors++;
-        return;
-      }
-      const subDirs: string[] = [];
-      for (const entry of entries) {
-        if (ignore.some((re) => re.test(entry.name))) continue;
-        if (!entry.isFile() && !entry.isDirectory()) continue; // skip symlinks, sockets...
-        const relPath = relDir ? `${relDir}/${entry.name}` : entry.name;
-        let stats: import("fs").Stats;
-        try {
-          stats = await fs.stat(path.join(/*turbopackIgnore: true*/ absDir, entry.name));
-        } catch {
-          continue;
-        }
-        const isDirectory = stats.isDirectory();
-        batch.push(upsertOp(folder, relDir, entry.name, stats, scanId));
-        if (batch.length >= BATCH_SIZE) await flush();
-        if (isDirectory) subDirs.push(relPath);
-      }
-      for (const d of subDirs) await walk(d);
+      const errors = await fsx.walk(
+        relDir,
+        async (dir, entry) => {
+          if (ignored(dir, entry.name)) return; // remote listings are flat: filter below ignored dirs
+          batch.push(upsertOp(folder, dir, entry.name, entry, scanId));
+          if (batch.length >= BATCH_SIZE) await flush();
+        },
+        (dir, name) => ignore.some((re) => re.test(name)),
+      );
+      readErrors += errors;
     };
 
     if (subDir) {
       // root is verified online; a missing sub folder really was deleted
-      let subStats: import("fs").Stats | null = null;
-      try {
-        subStats = await fs.stat(safeJoin(folder.path, subDir));
-      } catch (e: any) {
-        if (e.code !== "ENOENT") throw e;
-      }
-      if (!subStats?.isDirectory()) {
+      const subStats = await fsx.stat(subDir);
+      if (!subStats?.isDirectory) {
         await files.deleteMany({ folderId: folder._id, $or: [{ relPath: subDir }, belowDir(subDir)] });
       } else {
         // make sure the sub folder and its ancestors are in the index
         const parts = subDir.split("/");
         for (let i = 0; i < parts.length; i++) {
           const rel = parts.slice(0, i + 1).join("/");
-          const st = await fs.stat(safeJoin(folder.path, rel));
+          const st = await fsx.stat(rel);
+          if (!st) throw new Error(`${rel} vanished during the scan`);
           batch.push(upsertOp(folder, parts.slice(0, i).join("/"), parts[i], st, scanId));
         }
         await walk(subDir);
@@ -305,16 +288,6 @@ export async function scanFolder(folder: FolderDoc, subDirIn = "") {
   }
 }
 
-function hashFile(absPath: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const hash = crypto.createHash("sha1");
-    createReadStream(absPath)
-      .on("data", (chunk) => hash.update(chunk))
-      .on("end", () => resolve(hash.digest("hex")))
-      .on("error", reject);
-  });
-}
-
 /**
  * Compute content hashes for files that share their size with at least one
  * other file (only those can be content duplicates).
@@ -330,21 +303,39 @@ export async function hashCandidates(folder: FolderDoc, subDirIn = "") {
     { $set: { status: "hashing", statusMessage: subDir ? `Hashing ${subDir}` : null, progress: 0 } },
   );
   try {
-    await assertFolderOnline(folder);
+    const fsx = await assertFolderOnline(folder);
     // size collisions are checked across ALL folders, so cross-folder copies are found
     const all = (await folders.find({}, { projection: { _id: 1 } }).toArray()).map((f) => f._id);
     const candidates = await unhashedCandidates(all, { folderId: folder._id, dir: subDir });
     let done = 0;
-    for (const f of candidates) {
-      try {
-        const hash = await hashFile(safeJoin(folder.path, f.relPath));
-        await files.updateOne({ _id: f._id }, { $set: { hash } });
-      } catch (e: any) {
-        console.warn("hash failed", f.relPath, e.message);
+    // remote backends hash in batches (one round trip each); local files one by one
+    const BATCH_FILES = fsx.sha1Many ? 100 : 1;
+    const BATCH_BYTES = 256 * 1024 * 1024; // bounds the SMB temp download
+    for (let i = 0; i < candidates.length; ) {
+      const batch = [candidates[i++]];
+      let bytes = batch[0].size;
+      while (i < candidates.length && batch.length < BATCH_FILES && bytes + candidates[i].size <= BATCH_BYTES) {
+        bytes += candidates[i].size;
+        batch.push(candidates[i++]);
       }
-      done++;
-      if (done % 20 === 0)
-        await folders.updateOne({ _id: folder._id }, { $set: { progress: done } });
+      let hashes = new Map<string, string>();
+      if (fsx.sha1Many && batch.length > 1) {
+        try {
+          hashes = await fsx.sha1Many(batch.map((f) => ({ rel: f.relPath, size: f.size })));
+        } catch (e: any) {
+          console.warn("batch hash failed, hashing one by one", e.message);
+        }
+      }
+      for (const f of batch) {
+        try {
+          const hash = hashes.get(f.relPath) ?? (await fsx.sha1(f.relPath));
+          await files.updateOne({ _id: f._id }, { $set: { hash } });
+        } catch (e: any) {
+          console.warn("hash failed", f.relPath, e.message);
+        }
+        done++;
+        if (done % 20 === 0) await folders.updateOne({ _id: folder._id }, { $set: { progress: done } });
+      }
     }
     await folders.updateOne(
       { _id: folder._id },
@@ -388,7 +379,7 @@ export async function unhashedCandidates(
         size: { $in: sizes.map((s) => s._id) },
         $or: [{ hash: null }, { hash: { $exists: false } }],
       },
-      { projection: { _id: 1, relPath: 1, folderId: 1 } },
+      { projection: { _id: 1, relPath: 1, folderId: 1, size: 1 } },
     )
     .toArray();
 }

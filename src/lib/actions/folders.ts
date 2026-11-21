@@ -10,6 +10,7 @@ import {
   resolveFolderPath,
   scanFolder,
 } from "@/lib/scanner";
+import { isDirect } from "@/lib/folder-fs";
 import { isMounted, startIdleReaper, unmountFolder } from "@/lib/mounts";
 
 async function mountInfo(f: FolderDoc): Promise<FolderMountInfo | null> {
@@ -21,7 +22,8 @@ async function mountInfo(f: FolderDoc): Promise<FolderMountInfo | null> {
     remoteName: r?.name ?? "(deleted remote)",
     remotePath: f.mount.remotePath,
     idleMinutes: f.mount.idleMinutes,
-    mounted: await isMounted(f.path),
+    direct: isDirect(f),
+    mounted: isDirect(f) ? false : await isMounted(f.path),
     lastUsedAt: f.lastUsedAt?.toISOString() ?? null,
   };
 }
@@ -104,7 +106,7 @@ export async function removeFolder(id: string) {
   if (isJobRunning(id)) throw new Error("A scan is running for this folder");
   const { folders, files } = await collections();
   const folder = await folders.findOne({ _id });
-  if (folder?.mount) {
+  if (folder?.mount && !isDirect(folder)) {
     await unmountFolder(folder);
     await fs.rmdir(folder.path).catch(() => {}); // only removes the empty mount point
   }

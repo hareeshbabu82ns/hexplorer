@@ -18,6 +18,7 @@ import {
   Network,
   Pencil,
   Plug,
+  Zap,
   Plus,
   Server,
   ShieldCheck,
@@ -735,6 +736,7 @@ function RemoteBrowser({ remote }: { remote: SshRemote }) {
   const [name, setName] = useState("");
   const [idle, setIdle] = useState("15");
   const [scan, setScan] = useState(true);
+  const [access, setAccess] = useState<"mount" | "direct">("mount");
 
   const { data, isFetching, error } = useQuery({
     queryKey: ["remote-ls", remote.id, cwd],
@@ -759,10 +761,11 @@ function RemoteBrowser({ remote }: { remote: SshRemote }) {
           name: name || current.split("/").filter(Boolean).pop() || remote.name,
           idleMinutes: Number(idle),
           scan,
+          access,
         }),
       ),
     onSuccess: () => {
-      toast.success(`Mounted ${current} — ${scan ? "scanning" : "ready"}`);
+      toast.success(`${access === "direct" ? "Added" : "Mounted"} ${current} — ${scan ? "scanning" : "ready"}`);
       qc.invalidateQueries({ queryKey: ["folders"] });
     },
     onError: (e) => toast.error(errMsg(e)),
@@ -873,7 +876,7 @@ function RemoteBrowser({ remote }: { remote: SshRemote }) {
 
       <div className="bg-muted/30 flex flex-col gap-4 rounded-xl border p-4">
         <div>
-          <div className="text-sm font-semibold">Mount as data folder</div>
+          <div className="text-sm font-semibold">Add as data folder</div>
           <p className="text-muted-foreground mt-0.5 break-all font-mono text-xs">
             {remote.name}:{current || "~"}
           </p>
@@ -885,11 +888,30 @@ function RemoteBrowser({ remote }: { remote: SshRemote }) {
             onChange={(e) => setName(e.target.value)}
           />
         </Field>
-        <Field label="Unmount when idle" hint="Minutes, 0 keeps it mounted">
-          <Input type="number" min={0} value={idle} onChange={(e) => setIdle(e.target.value)} />
+        <Field
+          label="Access"
+          hint={
+            access === "direct"
+              ? `No mount: files are read over ${remote.type === "smb" ? "smbclient" : "ssh"} — works without FUSE, root or container privileges`
+              : `Mounted with ${remote.type === "smb" ? "cifs (needs root/sudo)" : "sshfs (needs FUSE)"}; fastest for browsing and backups`
+          }
+        >
+          <Segmented
+            value={access}
+            onChange={setAccess}
+            options={[
+              { value: "mount", label: "Mount", icon: Plug },
+              { value: "direct", label: "Direct", icon: Zap },
+            ]}
+          />
         </Field>
+        {access === "mount" && (
+          <Field label="Unmount when idle" hint="Minutes, 0 keeps it mounted">
+            <Input type="number" min={0} value={idle} onChange={(e) => setIdle(e.target.value)} />
+          </Field>
+        )}
         <label htmlFor={`scan-${remote.id}`} className="flex items-center justify-between gap-2 text-sm">
-          Scan after mounting
+          Scan after adding
           <Switch id={`scan-${remote.id}`} checked={scan} onCheckedChange={setScan} />
         </label>
         <Button
@@ -898,7 +920,15 @@ function RemoteBrowser({ remote }: { remote: SshRemote }) {
           onClick={() => mount.mutate()}
         >
           {mount.isPending ? <Loader2 className="size-4 animate-spin" /> : <Plug className="size-4" />}
-          {mount.isPending ? "Mounting…" : isSmbRoot ? "Open a share first" : "Mount folder"}
+          {mount.isPending
+            ? access === "direct"
+              ? "Connecting…"
+              : "Mounting…"
+            : isSmbRoot
+              ? "Open a share first"
+              : access === "direct"
+                ? "Add data folder"
+                : "Mount folder"}
         </Button>
       </div>
     </div>

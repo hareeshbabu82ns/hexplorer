@@ -129,35 +129,54 @@ type FolderMountInfo = {
   remoteName: string;
   remotePath: string;
   idleMinutes: number;
+  /** reached over ssh / smbclient without mounting */
+  direct: boolean;
   mounted: boolean;
   lastUsedAt?: string | null;
 };
 
 type BackupMode = "sync" | "mirror" | "snapshot";
 
+type BackupEndpoint =
+  | { kind: "folder"; folderId: string; dir: string }
+  | { kind: "remote"; remoteId: string; path: string }
+  | { kind: "local"; path: string };
+
+type BackupSchedule = {
+  type: "off" | "hourly" | "daily" | "weekly";
+  minute: number;
+  hour: number;
+  weekday: number;
+};
+
 type BackupInput = {
   id?: string;
   name?: string;
-  sourceFolderId: string;
-  sourceDir?: string;
-  /** data folder destination (remote mounts work too) … */
-  destFolderId?: string | null;
-  destDir?: string;
-  /** … or an absolute local path */
-  destPath?: string | null;
+  source: BackupEndpoint;
+  dest: BackupEndpoint;
   mode: BackupMode;
   exclude?: string;
   rescanDest?: boolean;
+  keep?: number | null;
+  archive?: "zip" | null;
+  schedule?: BackupSchedule | null;
 };
 
 type BackupJob = {
   id: string;
   name: string;
-  source: { folderId: string; folderName: string; dir: string };
-  dest: { folderId: string | null; folderName: string | null; dir: string; path: string | null };
+  source: BackupEndpoint;
+  dest: BackupEndpoint;
+  /** human readable "where", e.g. "Photos/2024" or "nas:/volume1/backups" */
+  sourceLabel: string;
+  destLabel: string;
   mode: BackupMode;
   exclude: string;
   rescanDest: boolean;
+  keep: number | null;
+  archive: "zip" | null;
+  schedule: BackupSchedule | null;
+  nextRunAt: string | null;
   status: "idle" | "running" | "error" | "warning" | "success";
   progress: number | null;
   lastRun: {
@@ -165,5 +184,6 @@ type BackupJob = {
     finishedAt: string | null;
     target: string | null;
     message: string | null;
+    trigger: string | null;
   } | null;
 };
