@@ -22,11 +22,13 @@ services:
       DB_BACKUP_DIR: "/app/db-backups"
       # encrypts saved DB connection strings (defaults to BETTER_AUTH_SECRET)
       # DB_ADMIN_SECRET: "change-me-openssl-rand-hex-32"
-    # needed only for SSH remote mounts (sshfs)
+    # remote mounts: /dev/fuse for SSH (sshfs; host needs the fuse module),
+    # SYS_ADMIN for any mount, DAC_READ_SEARCH for SMB (mount.cifs)
     devices:
       - /dev/fuse
     cap_add:
       - SYS_ADMIN
+      - DAC_READ_SEARCH
     security_opt:
       - apparmor:unconfined
     ports:

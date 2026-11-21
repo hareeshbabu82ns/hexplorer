@@ -43,8 +43,9 @@ WORKDIR /app
 ENV NODE_ENV production
 
 # network remotes + backups: sshfs/sshpass (SSH), samba-client/cifs-utils (SMB), rsync
-# (mounting needs: --device /dev/fuse --cap-add SYS_ADMIN; cifs mounts need the container to run as root)
-RUN apk add --no-cache sshfs fuse3 openssh-client sshpass samba-client cifs-utils rsync openssl su-exec
+# (mounting needs: --device /dev/fuse --cap-add SYS_ADMIN --cap-add DAC_READ_SEARCH;
+#  cifs mounts run as root through a sudoers rule written by docker-entrypoint.sh)
+RUN apk add --no-cache sshfs fuse3 openssh-client sshpass samba-client cifs-utils rsync openssl su-exec sudo
 # Uncomment the following line in case you want to disable telemetry during runtime.
 # ENV NEXT_TELEMETRY_DISABLED 1
 

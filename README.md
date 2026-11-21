@@ -107,15 +107,16 @@ docker build -t hexplorer:main .
 docker run -it -p 3000:3000 \
  -e DATABASE_URL="mongodb://user:pass@host:27017/hexplorer" \
  --volume "$(pwd)"/data:/app/data:rw \
- --device /dev/fuse --cap-add SYS_ADMIN \
+ --device /dev/fuse --cap-add SYS_ADMIN --cap-add DAC_READ_SEARCH \
  --rm hexplorer:main
 
 # run (from registry)
 docker pull ghcr.io/hareeshbabu82ns/hexplorer:main
 
 docker run -it -p 3000:3000 \
- --user "$(id -u):$(id -g)" \
+ -e PUID="$(id -u)" -e PGID="$(id -g)" \
  --volume "$(pwd)"/hexplorer:/app/data:rw \
+ --device /dev/fuse --cap-add SYS_ADMIN --cap-add DAC_READ_SEARCH \
  --rm ghcr.io/hareeshbabu82ns/hexplorer:main
 ```
 

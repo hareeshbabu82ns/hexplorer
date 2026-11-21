@@ -4,7 +4,8 @@
 # Bind mounts / named volumes hide the image's /app/data, so they show up owned by
 # root on first start. When the container starts as root we create the folders the
 # app writes to, hand them to PUID:PGID, and re-exec as that user via su-exec.
-# Set RUN_AS_ROOT=true to skip the drop (e.g. for CIFS mounts, which need root).
+# SMB/CIFS mounts need root: the app runs them via 'sudo -n mount -t cifs' / 'sudo -n umount',
+# which a sudoers rule written below allows. Set RUN_AS_ROOT=true to skip the drop entirely.
 set -e
 
 PUID="${PUID:-1001}"
@@ -34,7 +35,30 @@ if [ "$(id -u)" = "0" ]; then
   # app-owned folders: safe to fix recursively
   chown -R "$PUID:$PGID" /app/.next "$DB_BACKUP_DIR" 2>/dev/null || true
 
+  # SSH remotes (sshfs) need the FUSE device passed into the container
+  if [ ! -c /dev/fuse ]; then
+    echo "entrypoint: warning: /dev/fuse not found - SSH (sshfs) mounts will fail." \
+      "Docker: add 'devices: [/dev/fuse]' + 'cap_add: [SYS_ADMIN]'; Kubernetes: privileged" \
+      "container or a hostPath /dev/fuse volume. The host needs the fuse module ('modprobe fuse')."
+  fi
+
   if [ "$RUN_AS_ROOT" != "true" ]; then
+    # sudo needs passwd/group entries for the runtime ids (PUID/PGID may be arbitrary)
+    if ! getent group "$PGID" >/dev/null; then
+      echo "hexplorer:x:$PGID:" >> /etc/group
+    fi
+    if ! getent passwd "$PUID" >/dev/null; then
+      echo "hexplorer:x:$PUID:$PGID:hexplorer:/home/nextjs:/sbin/nologin" >> /etc/passwd
+    fi
+    # allow only CIFS mount / umount as root, without a password
+    MOUNT_BIN="$(command -v mount)"
+    UMOUNT_BIN="$(command -v umount)"
+    cat > /etc/sudoers.d/hexplorer <<SUDO
+Defaults:#$PUID !requiretty
+#$PUID ALL=(root) NOPASSWD: $MOUNT_BIN -t cifs *, $UMOUNT_BIN *
+SUDO
+    chmod 440 /etc/sudoers.d/hexplorer
+
     export HOME=/home/nextjs
     exec su-exec "$PUID:$PGID" "$@"
   fi
