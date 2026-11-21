@@ -4,8 +4,11 @@ services:
   hexplorer:
     image: ghcr.io/hareeshbabu82ns/hexplorer:main
     container_name: hexplorer
-    user: "1026:100"
+    # don't set `user:` - the entrypoint starts as root, fixes ownership of the
+    # mounted folders, then drops to PUID:PGID (match the owner of your host files)
     environment:
+      PUID: "1026"
+      PGID: "100"
       #APP_URL: 'http://192.168.86.10:32010'
       APP_URL: "http://hexplorer.local"
       APP_SECRET: "3333xxx3333"

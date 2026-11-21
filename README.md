@@ -60,8 +60,8 @@ account (user ID + password); after that sign ups are refused.
 
 Env vars: `BETTER_AUTH_URL`, `BETTER_AUTH_SECRET` (falls back to `APP_SECRET`),
 optional `BETTER_AUTH_TRUSTED_ORIGINS` (other URLs you open the app with) and
-`AUTH_INTERNAL_URL` (how the server reaches itself, e.g. `http://127.0.0.1:3000`
-behind a reverse proxy).
+`AUTH_INTERNAL_URL` (how the server reaches itself, default `http://127.0.0.1:$PORT`;
+must be plain `http://`, not the public `https://` URL).
 
 **Install as an app:** on iPad/iPhone open the site in Safari → Share → *Add to
 Home Screen*; in Chrome/Edge use the install icon or *Install app* in the user

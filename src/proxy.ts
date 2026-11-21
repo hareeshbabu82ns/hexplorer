@@ -21,8 +21,10 @@ async function hasValidSession(req: NextRequest): Promise<{ ok: boolean; setCook
     const cached = await getCookieCache(req, { secret, isSecure }).catch(() => null);
     if (cached?.session) return { ok: true };
   }
-  // slow path: ask the auth API (also refreshes the cache cookie)
-  const origin = process.env.AUTH_INTERNAL_URL || req.nextUrl.origin;
+  // slow path: ask the auth API (also refreshes the cache cookie).
+  // Call ourselves over plain HTTP on loopback: req.nextUrl.origin can be "https://…"
+  // behind a TLS-terminating proxy while this server only speaks HTTP.
+  const origin = process.env.AUTH_INTERNAL_URL || `http://127.0.0.1:${process.env.PORT || 3000}`;
   try {
     const res = await fetch(new URL("/api/auth/get-session", origin), {
       headers: { cookie: req.headers.get("cookie") ?? "" },
@@ -31,7 +33,7 @@ async function hasValidSession(req: NextRequest): Promise<{ ok: boolean; setCook
     const data = res.ok ? await res.json() : null;
     return { ok: !!data?.session, setCookie: res.headers.getSetCookie?.() };
   } catch (e) {
-    console.error("session check failed", e);
+    console.error(`session check failed (${origin}; set AUTH_INTERNAL_URL to override)`, e);
     return { ok: false };
   }
 }

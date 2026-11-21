@@ -44,7 +44,7 @@ ENV NODE_ENV production
 
 # network remotes + backups: sshfs/sshpass (SSH), samba-client/cifs-utils (SMB), rsync
 # (mounting needs: --device /dev/fuse --cap-add SYS_ADMIN; cifs mounts need the container to run as root)
-RUN apk add --no-cache sshfs fuse3 openssh-client sshpass samba-client cifs-utils rsync openssl
+RUN apk add --no-cache sshfs fuse3 openssh-client sshpass samba-client cifs-utils rsync openssl su-exec
 # Uncomment the following line in case you want to disable telemetry during runtime.
 # ENV NEXT_TELEMETRY_DISABLED 1
 
@@ -63,9 +63,12 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
 # DB Management backups (DB_BACKUP_DIR defaults to ./data/backups): mount a volume here
-RUN mkdir -p /app/data/backups /app/db-backups && chown -R nextjs:nodejs /app/data /app/db-backups
+RUN mkdir -p /app/data/backups /app/db-backups /home/nextjs && chown -R nextjs:nodejs /app/data /app/db-backups
 
-USER nextjs
+# Starts as root to fix ownership of mounted volumes (PUID/PGID, default nextjs 1001:1001),
+# then drops to that user with su-exec. See docker-entrypoint.sh.
+COPY --chmod=755 docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+ENTRYPOINT ["docker-entrypoint.sh"]
 
 EXPOSE 3000
 
@@ -73,4 +76,5 @@ ENV PORT 3000
 
 # server.js is created by next build from the standalone output
 # https://nextjs.org/docs/pages/api-reference/next-config-js/output
-CMD HOSTNAME="0.0.0.0" node server.js
+# HOSTNAME (bind address) is set in docker-entrypoint.sh
+CMD ["node", "server.js"]
