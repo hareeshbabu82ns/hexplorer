@@ -1,5 +1,6 @@
 "use server";
 
+import fs from "fs/promises";
 import path from "path";
 import { BackupDoc, BackupEndpointDoc, collections, normDir, toObjectId } from "@/lib/db";
 import {
@@ -11,7 +12,10 @@ import {
   runBackup,
   startBackupScheduler,
 } from "@/lib/backup";
+import { isDirect, safeRel } from "@/lib/folder-fs";
 import { background, isJobRunning } from "@/lib/jobs";
+import { ensureMounted, listRemoteDir } from "@/lib/mounts";
+import { safeJoin } from "@/lib/scanner";
 
 type Names = { folders: Map<string, string>; remotes: Map<string, string> };
 
@@ -177,4 +181,48 @@ export async function deleteBackup(id: string) {
   if (isJobRunning(id)) throw new Error("Backup is running");
   const { backups } = await collections();
   await backups.deleteOne({ _id: toObjectId(id) });
+}
+
+/* --------------------------------- browse --------------------------------- */
+
+type DirListing = { path: string; dirs: string[] };
+type BrowseResult = { ok: true; data: DirListing } | { ok: false; error: string };
+
+async function attemptBrowse(fn: () => Promise<DirListing>): Promise<BrowseResult> {
+  try {
+    return { ok: true, data: await fn() };
+  } catch (e: any) {
+    return { ok: false, error: (e?.message || String(e)).trim() };
+  }
+}
+
+const sortNames = (a: string[]) => a.sort((x, y) => x.localeCompare(y, undefined, { sensitivity: "base" }));
+
+/** sub folders of `dir` inside a data folder (direct folders are listed without mounting) */
+export async function browseFolderDir(folderId: string, dir: string): Promise<BrowseResult> {
+  return attemptBrowse(async () => {
+    const { folders, remotes } = await collections();
+    const folder = await folders.findOne({ _id: toObjectId(folderId) });
+    if (!folder) throw new Error("Folder not found");
+    const rel = normDir(dir);
+    if (isDirect(folder)) {
+      const remote = await remotes.findOne({ _id: folder.mount!.remoteId });
+      if (!remote) throw new Error("Remote for this folder no longer exists");
+      const remotePath = path.posix.join(folder.mount!.remotePath || ".", safeRel(rel)).replace(/^\.(\/|$)/, "");
+      const r = await listRemoteDir(remote, remotePath);
+      return { path: rel, dirs: sortNames(r.entries.filter((e) => e.isDirectory).map((e) => e.name)) };
+    }
+    if (folder.mount) await ensureMounted(folder);
+    const list = await fs.readdir(safeJoin(folder.path, rel), { withFileTypes: true });
+    return { path: rel, dirs: sortNames(list.filter((d) => d.isDirectory()).map((d) => d.name)) };
+  });
+}
+
+/** sub folders of an absolute path on the server */
+export async function browseLocalDir(p: string): Promise<BrowseResult> {
+  return attemptBrowse(async () => {
+    const abs = path.resolve(/*turbopackIgnore: true*/ "/", p || "/");
+    const list = await fs.readdir(abs, { withFileTypes: true });
+    return { path: abs, dirs: sortNames(list.filter((d) => d.isDirectory()).map((d) => d.name)) };
+  });
 }

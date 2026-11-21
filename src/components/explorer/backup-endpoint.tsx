@@ -12,6 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { browseFolderDir, browseLocalDir } from "@/lib/actions/backups";
 import { browseRemote, listRemotes } from "@/lib/actions/remotes";
 import { cn } from "@/lib/utils";
 import { useFolders } from "./use-folders";
@@ -98,7 +99,20 @@ export function EndpointPicker({
             value={value.dir}
             onChange={(e) => onChange({ ...value, dir: e.target.value })}
           />
+          <BrowseButton disabled={!value.folderId} onClick={() => setBrowsing((b) => !b)} />
         </div>
+      )}
+      {value.kind === "folder" && browsing && value.folderId && (
+        <PathBrowser
+          queryKey={["folder-ls", value.folderId]}
+          load={(p) => browseFolderDir(value.folderId, p)}
+          path={value.dir}
+          home=""
+          label={(p) => `${folders?.find((f) => f.id === value.folderId)?.name ?? "folder"}/${p}`}
+          join={(p, name) => (p ? `${p.replace(/\/$/, "")}/${name}` : name)}
+          parent={(p) => p.split("/").filter(Boolean).slice(0, -1).join("/")}
+          onPick={(dir) => onChange({ ...value, dir })}
+        />
       )}
 
       {value.kind === "remote" && (
@@ -137,14 +151,7 @@ export function EndpointPicker({
                 value={value.path}
                 onChange={(e) => onChange({ ...value, path: e.target.value })}
               />
-              <Button
-                type="button"
-                variant="outline"
-                disabled={!value.remoteId}
-                onClick={() => setBrowsing((b) => !b)}
-              >
-                <FolderOpen className="size-4" /> Browse
-              </Button>
+              <BrowseButton disabled={!value.remoteId} onClick={() => setBrowsing((b) => !b)} />
             </div>
           )}
           {browsing && value.remoteId && (
@@ -162,12 +169,29 @@ export function EndpointPicker({
       )}
 
       {value.kind === "local" && (
-        <Input
-          className="font-mono text-xs"
-          placeholder={role === "dest" ? "/media/usb/backups" : "/srv/data/projects"}
-          value={value.path}
-          onChange={(e) => onChange({ ...value, path: e.target.value })}
-        />
+        <>
+          <div className="flex gap-2">
+            <Input
+              className="font-mono text-xs"
+              placeholder={role === "dest" ? "/media/usb/backups" : "/srv/data/projects"}
+              value={value.path}
+              onChange={(e) => onChange({ ...value, path: e.target.value })}
+            />
+            <BrowseButton onClick={() => setBrowsing((b) => !b)} />
+          </div>
+          {browsing && (
+            <PathBrowser
+              queryKey={["local-ls"]}
+              load={(p) => browseLocalDir(p)}
+              path={value.path || "/"}
+              home="/"
+              label={(p) => p}
+              join={(p, name) => `${p.replace(/\/$/, "")}/${name}`}
+              parent={(p) => p.replace(/\/[^/]+\/?$/, "") || "/"}
+              onPick={(path) => onChange({ ...value, path })}
+            />
+          )}
+        </>
       )}
     </div>
   );
@@ -235,6 +259,76 @@ function RemotePathBrowser({
           >
             <Folder className="size-4 fill-amber-400/25 text-amber-500" />
             <span className="truncate">{e.name}</span>
+            <ChevronRight className="ml-auto size-4 opacity-0 group-hover:opacity-50" />
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function BrowseButton({ disabled, onClick }: { disabled?: boolean; onClick: () => void }) {
+  return (
+    <Button type="button" variant="outline" disabled={disabled} onClick={onClick}>
+      <FolderOpen className="size-4" /> Browse
+    </Button>
+  );
+}
+
+/** compact folder browser for data folder sub paths / server paths; navigating also picks */
+function PathBrowser({
+  queryKey,
+  load,
+  path,
+  home,
+  label,
+  join,
+  parent,
+  onPick,
+}: {
+  queryKey: unknown[];
+  load: (p: string) => Promise<{ ok: true; data: { path: string; dirs: string[] } } | { ok: false; error: string }>;
+  path: string;
+  home: string;
+  label: (p: string) => string;
+  join: (p: string, name: string) => string;
+  parent: (p: string) => string;
+  onPick: (p: string) => void;
+}) {
+  const { data, isFetching, error } = useQuery({
+    queryKey: [...queryKey, path],
+    queryFn: () => unwrap(load(path)),
+    retry: false,
+  });
+  const current = data?.path ?? path;
+  const dirs = data?.dirs ?? [];
+
+  return (
+    <div className="bg-card overflow-hidden rounded-lg border">
+      <div className="bg-muted/40 flex items-center gap-1 border-b px-1.5 py-1">
+        <Button type="button" size="icon-sm" variant="ghost" title="Top" onClick={() => onPick(home)}>
+          <Home className="size-4" />
+        </Button>
+        <Button type="button" size="icon-sm" variant="ghost" title="Up" onClick={() => onPick(parent(current))}>
+          <ArrowUp className="size-4" />
+        </Button>
+        <span className="truncate font-mono text-xs">{label(current)}</span>
+        {isFetching && <Loader2 className="text-muted-foreground ml-auto size-3.5 animate-spin" />}
+      </div>
+      <div className="h-44 overflow-auto p-1 text-sm">
+        {error && <p className="text-destructive whitespace-pre-wrap p-2 text-xs">{(error as Error).message}</p>}
+        {!isFetching && !error && dirs.length === 0 && (
+          <p className="text-muted-foreground p-2 text-xs">No sub folders</p>
+        )}
+        {dirs.map((name) => (
+          <button
+            key={name}
+            type="button"
+            onClick={() => onPick(join(current, name))}
+            className="hover:bg-accent group flex w-full items-center gap-2 rounded-md px-2 py-1 text-left"
+          >
+            <Folder className="size-4 fill-amber-400/25 text-amber-500" />
+            <span className="truncate">{name}</span>
             <ChevronRight className="ml-auto size-4 opacity-0 group-hover:opacity-50" />
           </button>
         ))}

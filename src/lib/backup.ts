@@ -9,11 +9,24 @@ import {
   FolderDoc,
   LegacyBackupEndpoint,
   normDir,
+  RemoteDoc,
 } from "./db";
-import { zipTo } from "./backup-zip";
-import { isDirect } from "./folder-fs";
+import { excludeMatcher, zipTo } from "./backup-zip";
+import { FsEntry, isDirect, remoteFs } from "./folder-fs";
 import { holdFolders, isJobRunning, runningJobs } from "./jobs";
-import { isMounted, mountRemoteAt, mountsRoot, mountTypeFor, slugify, unmountPath } from "./mounts";
+import {
+  isMounted,
+  mountRemoteAt,
+  mountsRoot,
+  mountTypeFor,
+  rsyncSsh,
+  run as runCmd,
+  shq,
+  slugify,
+  splitSmbPath,
+  sshCommand,
+  unmountPath,
+} from "./mounts";
 import { assertFolderOnline, safeJoin, scanFolder } from "./scanner";
 
 const isInside = (child: string, parent: string) =>
@@ -76,9 +89,14 @@ export function nextRunAfter(s: BackupScheduleDoc | null | undefined, from = new
 
 /* -------------------------------- endpoints ------------------------------- */
 
+/** where an endpoint lives: a local path, or a direct (unmounted) remote path */
+type Loc =
+  | { kind: "local"; abs: string }
+  /** root: remote path (ssh: "" = home, relative = from home; smb: /share/sub) */
+  | { kind: "ssh" | "smb"; remote: RemoteDoc; root: string };
+
 type Resolved = {
-  /** absolute local path (for remotes: inside the temporary mount) */
-  abs: string;
+  loc: Loc;
   folder: FolderDoc | null;
   /** folder endpoints: the sub dir inside the folder */
   folderDir: string;
@@ -89,8 +107,8 @@ type Resolved = {
 
 const noop = async () => {};
 
-/** temporary mount point for a remote endpoint of a backup job */
-function backupMountPoint(backupId: string, role: "src" | "dest") {
+/** temporary mount point / staging dir of a backup job */
+function backupWorkDir(backupId: string, role: string) {
   return path.join(/*turbopackIgnore: true*/ mountsRoot(), ".backups", `${backupId}-${role}`);
 }
 
@@ -106,24 +124,26 @@ async function resolveEndpoint(
     const dir = normDir(ep.dir);
     const baseName = dir ? path.posix.basename(dir) : slugify(folder.name);
     if (isDirect(folder)) {
-      // direct (unmounted) folder: rsync needs a path, so mount the remote just for this run
-      const remotePath = path.posix.join(folder.mount!.remotePath || ".", dir).replace(/^\.\/?/, "");
-      const r = await resolveEndpoint({ kind: "remote", remoteId: folder.mount!.remoteId, path: remotePath }, role, backupId);
-      return { ...r, folder, folderDir: dir, baseName };
+      // direct folder: never mounted; rsync over ssh / smbclient talk to the remote
+      const remote = await remotes.findOne({ _id: folder.mount!.remoteId });
+      if (!remote) throw new Error(`Remote of folder ${folder.name} no longer exists`);
+      const root = path.posix.join(folder.mount!.remotePath || ".", dir).replace(/^\.(\/|$)/, "");
+      const kind = remote.type === "smb" ? "smb" : "ssh";
+      return { loc: { kind, remote, root }, folder, folderDir: dir, baseName, cleanup: noop };
     }
     await assertFolderOnline(folder);
-    return { abs: safeJoin(folder.path, dir), folder, folderDir: dir, baseName, cleanup: noop };
+    return { loc: { kind: "local", abs: safeJoin(folder.path, dir) }, folder, folderDir: dir, baseName, cleanup: noop };
   }
   if (ep.kind === "local") {
     if (!ep.path || !path.isAbsolute(ep.path))
       throw new Error(`${role === "src" ? "Source" : "Destination"} path must be absolute`);
     const abs = path.resolve(/*turbopackIgnore: true*/ ep.path);
-    return { abs, folder: null, folderDir: "", baseName: path.basename(abs) || "root", cleanup: noop };
+    return { loc: { kind: "local", abs }, folder: null, folderDir: "", baseName: path.basename(abs) || "root", cleanup: noop };
   }
   const remote = await remotes.findOne({ _id: ep.remoteId });
   if (!remote) throw new Error(`${role === "src" ? "Source" : "Destination"} remote no longer exists`);
   const type = mountTypeFor(remote);
-  const mp = backupMountPoint(backupId, role);
+  const mp = backupWorkDir(backupId, role);
   // leftover from a crashed run
   await unmountPath(mp, type).catch(() => {});
   await mountRemoteAt(remote, ep.path, mp);
@@ -136,7 +156,65 @@ async function resolveEndpoint(
     }
   };
   const seg = ep.path.split("/").filter(Boolean).pop();
-  return { abs: mp, folder: null, folderDir: "", baseName: seg || slugify(remote.name), cleanup };
+  return { loc: { kind: "local", abs: mp }, folder: null, folderDir: "", baseName: seg || slugify(remote.name), cleanup };
+}
+
+/* ------------------------------ loc helpers ------------------------------- */
+
+/** ssh paths: "~" / "~/x" → relative to home */
+const sshRel = (p: string) => p.replace(/^~(\/|$)/, "");
+
+function joinLoc(loc: Loc, name: string): Loc {
+  if (loc.kind === "local") return { kind: "local", abs: path.join(/*turbopackIgnore: true*/ loc.abs, name) };
+  return { ...loc, root: loc.root ? path.posix.join(loc.root, name) : name };
+}
+
+/** split a remote loc into (parent loc, base name); null for a root that has no parent */
+function splitRemote(loc: Extract<Loc, { root: string }>) {
+  const root = loc.kind === "ssh" ? sshRel(loc.root) : loc.root;
+  const base = path.posix.basename(root);
+  if (!base || (loc.kind === "smb" && !splitSmbPath(root)[1])) return null;
+  const parent = path.posix.dirname(root);
+  return { parent: parent === "." ? "" : parent, base };
+}
+
+const locLabel = (loc: Loc) =>
+  loc.kind === "local" ? loc.abs : `${loc.remote.name}:${loc.root || "~"}`;
+
+/** null when missing */
+async function statLoc(loc: Loc): Promise<{ isDir: boolean } | null> {
+  if (loc.kind === "local") {
+    const st = await fs.stat(loc.abs).catch(() => null);
+    return st && { isDir: st.isDirectory() };
+  }
+  const sp = splitRemote(loc);
+  if (!sp) {
+    await remoteFs(loc.remote, loc.root).listRoot();
+    return { isDir: true };
+  }
+  const e = await remoteFs(loc.remote, sp.parent).stat(sp.base);
+  return e && { isDir: e.isDirectory };
+}
+
+/** mkdir -p */
+async function ensureDir(loc: Loc) {
+  if (loc.kind === "local") return void (await fs.mkdir(loc.abs, { recursive: true }));
+  if (loc.kind === "smb") return remoteFs(loc.remote, loc.root).mkdirs!([]);
+  const p = sshRel(loc.root);
+  if (!p) return;
+  const c = await sshCommand(loc.remote, `mkdir -p -- ${shq(p)}`);
+  await runCmd(c.cmd, c.args, { env: c.env, timeout: 60000 });
+}
+
+async function listNames(loc: Loc) {
+  if (loc.kind === "local") return fs.readdir(loc.abs);
+  return remoteFs(loc.remote, loc.root).listRoot();
+}
+
+async function removeEntry(loc: Loc, name: string, isDir: boolean) {
+  if (loc.kind === "local")
+    return fs.rm(path.join(/*turbopackIgnore: true*/ loc.abs, name), { recursive: true, force: true });
+  return remoteFs(loc.remote, loc.root).rm(name, isDir);
 }
 
 /** human readable endpoint, e.g. "Photos/2024", "nas:/volume1/backup", "/media/usb" */
@@ -154,11 +232,14 @@ export function endpointLabel(
 /* ---------------------------------- rsync --------------------------------- */
 
 function rsync(
-  args: string[],
+  c: { cmd: string; args: string[]; env?: Record<string, string> },
   onProgress: (pct: number) => void,
 ): Promise<{ code: number; stderr: string }> {
   return new Promise((resolve, reject) => {
-    const child = spawn("rsync", args, { stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(c.cmd, c.args, {
+      env: { ...process.env, ...c.env },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
     let stderr = "";
     let buf = "";
     child.stdout.on("data", (d: Buffer) => {
@@ -189,16 +270,255 @@ function fmtBytes(n: number) {
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /** delete the oldest `<baseName>-YYYYMMDD-HHMMSS[.zip]` snapshots beyond `keep`; returns how many */
-async function pruneSnapshots(destRoot: string, baseName: string, keep: number) {
+async function pruneSnapshots(destRoot: Loc, baseName: string, keep: number) {
   const re = new RegExp(`^${escapeRe(baseName)}-(\\d{8}-\\d{6})(\\.zip)?$`);
   // newest first by timestamp, whether a folder or a zip
-  const snaps = (await fs.readdir(destRoot))
+  const snaps = (await listNames(destRoot))
     .filter((n) => re.test(n))
     .sort((a, b) => re.exec(b)![1].localeCompare(re.exec(a)![1]));
   const old = snaps.slice(keep);
-  for (const n of old)
-    await fs.rm(path.join(/*turbopackIgnore: true*/ destRoot, n), { recursive: true, force: true });
+  for (const n of old) await removeEntry(destRoot, n, !n.endsWith(".zip"));
   return old.length;
+}
+
+/* -------------------------------- transfer -------------------------------- */
+
+type XferOpts = {
+  mirror: boolean;
+  excludes: string[];
+  onProgress: (pct: number) => void;
+  /** scratch dir for remote → remote copies */
+  stageDir: string;
+};
+type XferResult = { warnings: string[] };
+type TreeEntry = { size: number; mtime: number; dir: boolean };
+
+const BATCH = 500;
+const tail = (s: string) => s.trim().split("\n").slice(-3).join(" | ");
+
+/** files + dirs below a local dir (rel → entry), excluded paths left out */
+async function walkLocal(root: string, excluded: ReturnType<typeof excludeMatcher>) {
+  const out = new Map<string, TreeEntry>();
+  const walk = async (abs: string, rel: string) => {
+    for (const d of await fs.readdir(abs, { withFileTypes: true })) {
+      const r = rel ? `${rel}/${d.name}` : d.name;
+      const a = path.join(/*turbopackIgnore: true*/ abs, d.name);
+      if (!d.isDirectory() && !d.isFile()) continue;
+      if (excluded(r, d.name, d.isDirectory())) continue;
+      if (d.isDirectory()) {
+        out.set(r, { size: 0, mtime: 0, dir: true });
+        await walk(a, r);
+      } else {
+        const st = await fs.stat(a);
+        out.set(r, { size: st.size, mtime: st.mtimeMs, dir: false });
+      }
+    }
+  };
+  await walk(root, "");
+  return out;
+}
+
+/** files + dirs below a remote dir via FolderFs.walk (missing dir = empty) */
+async function walkRemote(
+  fsx: ReturnType<typeof remoteFs>,
+  excluded: ReturnType<typeof excludeMatcher>,
+  allowMissing: boolean,
+) {
+  const out = new Map<string, TreeEntry>();
+  const skipped = new Set<string>();
+  try {
+    await fsx.walk("", async (relDir: string, e: FsEntry) => {
+      const rel = relDir ? `${relDir}/${e.name}` : e.name;
+      if (relDir && skipped.has(relDir)) return void (e.isDirectory && skipped.add(rel));
+      if (excluded(rel, e.name, e.isDirectory)) return void (e.isDirectory && skipped.add(rel));
+      out.set(rel, { size: e.size, mtime: e.mtime.getTime(), dir: e.isDirectory });
+    });
+  } catch (e) {
+    if (!allowMissing) throw e;
+  }
+  return out;
+}
+
+/** a file needs copying unless the destination has the same size and is not older */
+const changed = (src: TreeEntry, dst: TreeEntry | undefined) =>
+  !dst || dst.dir || dst.size !== src.size || dst.mtime < src.mtime - 2000;
+
+/** entries of `dest` that are not in `src` (parents first, children of removed dirs dropped) */
+function extras(src: Map<string, TreeEntry>, dest: Map<string, TreeEntry>) {
+  const out: [string, TreeEntry][] = [];
+  const gone: string[] = [];
+  for (const rel of [...dest.keys()].sort()) {
+    if (src.get(rel)?.dir === dest.get(rel)!.dir) continue;
+    if (gone.some((g) => rel.startsWith(g + "/"))) continue;
+    out.push([rel, dest.get(rel)!]);
+    if (dest.get(rel)!.dir) gone.push(rel);
+  }
+  return out;
+}
+
+/** progress over a byte total */
+function byteProgress(total: number, onProgress: (pct: number) => void) {
+  let done = 0;
+  return (n: number) => {
+    done += n;
+    if (total) onProgress(Math.min(99, Math.floor((done / total) * 100)));
+  };
+}
+
+/** SMB (direct) → local: incremental download with smbclient */
+async function smbPull(src: Extract<Loc, { root: string }>, isDir: boolean, target: string, o: XferOpts): Promise<XferResult> {
+  const excluded = excludeMatcher(o.excludes);
+  let fsx: ReturnType<typeof remoteFs>;
+  let entries: Map<string, TreeEntry>;
+  const localOf = (rel: string) => (isDir ? path.join(/*turbopackIgnore: true*/ target, rel) : target);
+  if (isDir) {
+    fsx = remoteFs(src.remote, src.root);
+    entries = await walkRemote(fsx, excluded, false);
+  } else {
+    const sp = splitRemote(src)!;
+    fsx = remoteFs(src.remote, sp.parent);
+    const e = await fsx.stat(sp.base);
+    if (!e) throw new Error(`Source does not exist: ${locLabel(src)}`);
+    entries = new Map([[sp.base, { size: e.size, mtime: e.mtime.getTime(), dir: false }]]);
+  }
+
+  await fs.mkdir(isDir ? target : path.dirname(target), { recursive: true });
+  const todo: { rel: string; e: TreeEntry }[] = [];
+  for (const [rel, e] of entries) {
+    if (e.dir) {
+      await fs.mkdir(localOf(rel), { recursive: true });
+      continue;
+    }
+    const st = await fs.stat(localOf(rel)).catch(() => null);
+    const have = st ? { size: st.size, mtime: st.mtimeMs, dir: st.isDirectory() } : undefined;
+    if (changed(e, have)) todo.push({ rel, e });
+  }
+
+  const warnings: string[] = [];
+  const tick = byteProgress(todo.reduce((n, t) => n + t.e.size, 0), o.onProgress);
+  let failed = 0;
+  for (let i = 0; i < todo.length; i += BATCH) {
+    const batch = todo.slice(i, i + BATCH);
+    const errs = await fsx.getFiles!(batch.map((t) => ({ rel: t.rel, local: localOf(t.rel) })));
+    for (const t of batch) {
+      const st = await fs.stat(localOf(t.rel)).catch(() => null);
+      if (!st || st.size !== t.e.size) {
+        failed++;
+        continue;
+      }
+      // keep the source mtime so the next run can skip unchanged files
+      await fs.utimes(localOf(t.rel), new Date(t.e.mtime), new Date(t.e.mtime)).catch(() => {});
+      tick(t.e.size);
+    }
+    if (errs.length && failed) warnings.push(`Some files were not copied: ${errs.slice(-3).join(" | ")}`);
+  }
+  if (failed && !warnings.length) warnings.push(`${failed} file(s) could not be copied`);
+
+  if (o.mirror && isDir) {
+    for (const [rel, e] of extras(entries, await walkLocal(target, excluded)))
+      await fs.rm(localOf(rel), { recursive: e.dir, force: true });
+  }
+  return { warnings };
+}
+
+/** local → SMB (direct): incremental upload with smbclient */
+async function smbPush(srcAbs: string, isDir: boolean, target: Extract<Loc, { root: string }>, o: XferOpts): Promise<XferResult> {
+  const excluded = excludeMatcher(o.excludes);
+  let fsx: ReturnType<typeof remoteFs>;
+  let local: Map<string, TreeEntry>;
+  let dest: Map<string, TreeEntry>;
+  const localOf = (rel: string) => (isDir ? path.join(/*turbopackIgnore: true*/ srcAbs, rel) : srcAbs);
+  if (isDir) {
+    fsx = remoteFs(target.remote, target.root);
+    await fsx.mkdirs!([]);
+    local = await walkLocal(srcAbs, excluded);
+    dest = await walkRemote(fsx, () => false, true);
+  } else {
+    const sp = splitRemote(target);
+    if (!sp) throw new Error(`Cannot write a file to ${locLabel(target)}`);
+    fsx = remoteFs(target.remote, sp.parent);
+    await fsx.mkdirs!([]);
+    const st = await fs.stat(srcAbs);
+    local = new Map([[sp.base, { size: st.size, mtime: st.mtimeMs, dir: false }]]);
+    const e = await fsx.stat(sp.base);
+    dest = new Map(e ? [[sp.base, { size: e.size, mtime: e.mtime.getTime(), dir: e.isDirectory }]] : []);
+  }
+
+  const warnings: string[] = [];
+  if (o.mirror && isDir) {
+    for (const [rel, e] of extras(local, dest)) {
+      if (excluded(rel, path.posix.basename(rel), e.dir)) continue; // like rsync: excluded = protected
+      await fsx.rm(rel, e.dir).catch((err) => warnings.push(`could not delete ${rel}: ${err.message}`));
+      dest.delete(rel);
+    }
+  }
+  const newDirs = [...local].filter(([rel, e]) => e.dir && !dest.get(rel)?.dir).map(([rel]) => rel);
+  if (newDirs.length) await fsx.mkdirs!(newDirs);
+
+  const todo = [...local].filter(([rel, e]) => !e.dir && changed(e, dest.get(rel)));
+  const tick = byteProgress(todo.reduce((n, [, e]) => n + e.size, 0), o.onProgress);
+  const errors: string[] = [];
+  for (let i = 0; i < todo.length; i += BATCH) {
+    const batch = todo.slice(i, i + BATCH);
+    errors.push(...(await fsx.putFiles!(batch.map(([rel]) => ({ local: localOf(rel), rel })))));
+    for (const [, e] of batch) tick(e.size);
+  }
+  if (errors.length) warnings.push(`${errors.length} file(s) could not be copied: ${errors.slice(-3).join(" | ")}`);
+  return { warnings };
+}
+
+/** rsync between local paths, or local ↔ direct ssh (rsync over ssh, no mount) */
+async function rsyncXfer(src: Loc, isDir: boolean, target: Loc, o: XferOpts): Promise<XferResult> {
+  // -rt instead of -a: owners/permissions often cannot be set on remote targets
+  const args = ["-rt", "--modify-window=2", "--info=progress2", "--no-inc-recursive"];
+  if (o.mirror) args.push("--delete");
+  for (const ex of o.excludes) args.push("--exclude", ex);
+  const ssh = src.kind === "ssh" ? src : target.kind === "ssh" ? target : null;
+  const r = ssh ? await rsyncSsh(ssh.remote) : null;
+  if (r) args.push("-e", r.shell, "--protect-args");
+  const spec = (l: Loc) =>
+    (l.kind === "local" ? l.abs : `${r!.target}:${sshRel(l.root) || "."}`) + (isDir ? "/" : "");
+  args.push(spec(src), spec(target));
+  // rsync only creates the last path level of a local target
+  if (target.kind === "local")
+    await fs.mkdir(isDir ? target.abs : path.dirname(target.abs), { recursive: true });
+  try {
+    const { code, stderr } = await rsync(r ? r.wrap(args) : { cmd: "rsync", args }, o.onProgress);
+    if (code === 23 || code === 24) return { warnings: [`Some files were skipped (rsync ${code}): ${tail(stderr)}`] };
+    if (code !== 0) {
+      const hint =
+        ssh && /command not found|rsync: not found|No such file or directory.*rsync|connection unexpectedly closed/i.test(stderr)
+          ? ` (rsync must be installed on ${ssh.remote.name})`
+          : "";
+      throw new Error(`rsync failed (${code}): ${tail(stderr)}${hint}`);
+    }
+    return { warnings: [] };
+  } catch (e: any) {
+    if (e.code !== "ENOENT" || src.kind !== "local" || target.kind !== "local") throw e;
+    // rsync not installed: plain recursive copy
+    await fs.cp(src.abs, target.abs, { recursive: true, force: true, preserveTimestamps: true });
+    return o.mirror ? { warnings: ["rsync not installed: copied files but could not delete extras (mirror)"] } : { warnings: [] };
+  }
+}
+
+/** copy src (a dir's contents, or a file) to target, without mounting direct remotes */
+async function transfer(src: Loc, isDir: boolean, target: Loc, o: XferOpts): Promise<XferResult> {
+  if (src.kind !== "smb" && target.kind !== "smb" && (src.kind === "local" || target.kind === "local"))
+    return rsyncXfer(src, isDir, target, o);
+  if (src.kind === "smb" && target.kind === "local") return smbPull(src, isDir, target.abs, o);
+  if (src.kind === "local" && target.kind === "smb") return smbPush(src.abs, isDir, target, o);
+  // remote → remote: copy through a local staging dir
+  await fs.rm(o.stageDir, { recursive: true, force: true });
+  await fs.mkdir(o.stageDir, { recursive: true });
+  const staged: Loc = { kind: "local", abs: path.join(/*turbopackIgnore: true*/ o.stageDir, "data") };
+  try {
+    const half = (lo: number) => (p: number) => o.onProgress(lo + Math.floor(p / 2));
+    const a = await transfer(src, isDir, staged, { ...o, mirror: false, onProgress: half(0) });
+    const b = await transfer(staged, isDir, target, { ...o, onProgress: half(50) });
+    return { warnings: [...a.warnings, ...b.warnings] };
+  } finally {
+    await fs.rm(o.stageDir, { recursive: true, force: true });
+  }
 }
 
 /* ----------------------------------- run ---------------------------------- */
@@ -228,22 +548,22 @@ export async function runBackup(b: BackupDoc, trigger: "manual" | "schedule" = "
       [src.folder?._id.toHexString(), dest.folder?._id.toHexString()].filter(Boolean) as string[],
     );
 
-    const st = await fs.stat(src.abs).catch(() => null);
-    if (!st) throw new Error(`Source does not exist: ${src.abs}`);
-    const isDir = st.isDirectory();
-    const destRoot = dest.abs;
+    const st = await statLoc(src.loc);
+    if (!st) throw new Error(`Source does not exist: ${locLabel(src.loc)}`);
+    const isDir = st.isDir;
+    const destRoot = dest.loc;
     const asZip = b.mode === "snapshot" && b.archive === "zip";
-    const target =
-      b.mode === "snapshot"
-        ? path.join(/*turbopackIgnore: true*/ destRoot, `${src.baseName}-${stamp()}${asZip ? ".zip" : ""}`)
-        : path.join(/*turbopackIgnore: true*/ destRoot, src.baseName);
-    if (srcEp.kind !== "remote" && destEp.kind !== "remote") {
-      if (isInside(target, src.abs)) throw new Error("Destination is inside the source");
-      if (isInside(src.abs, target)) throw new Error("Source is inside the destination");
+    const target = joinLoc(
+      destRoot,
+      b.mode === "snapshot" ? `${src.baseName}-${stamp()}${asZip ? ".zip" : ""}` : src.baseName,
+    );
+    if (src.loc.kind === "local" && target.kind === "local" && srcEp.kind !== "remote" && destEp.kind !== "remote") {
+      if (isInside(target.abs, src.loc.abs)) throw new Error("Destination is inside the source");
+      if (isInside(src.loc.abs, target.abs)) throw new Error("Source is inside the destination");
     }
 
-    await backups.updateOne({ _id: b._id }, { $set: { "lastRun.target": target } });
-    await fs.mkdir(isDir && !asZip ? target : path.dirname(target), { recursive: true });
+    await backups.updateOne({ _id: b._id }, { $set: { "lastRun.target": locLabel(target) } });
+    await ensureDir(isDir && !asZip ? target : destRoot);
 
     let lastWrite = 0;
     const onProgress = (pct: number) => {
@@ -255,33 +575,37 @@ export async function runBackup(b: BackupDoc, trigger: "manual" | "schedule" = "
     const excludes = (b.exclude ?? "").split(",").map((e) => e.trim()).filter(Boolean);
     let status: BackupDoc["status"] = "success";
     const messages: string[] = [];
+    const warnings: string[] = [];
+    const xfer: XferOpts = { mirror: b.mode === "mirror", excludes, onProgress, stageDir: backupWorkDir(id, "stage") };
     if (asZip) {
-      const r = await zipTo(src.abs, isDir, target, excludes, onProgress);
-      messages.push(`zipped ${r.files} file(s), ${fmtBytes(r.bytes)} → ${fmtBytes(r.zipBytes)}`);
-      if (r.skipped) messages.push(`skipped ${r.skipped} symlink(s)/special file(s)`);
-    } else try {
-      // -rt instead of -a: owners/permissions often cannot be set on sshfs/cifs targets
-      const args = ["-rt", "--modify-window=2", "--info=progress2", "--no-inc-recursive"];
-      if (b.mode === "mirror") args.push("--delete");
-      for (const ex of excludes) args.push("--exclude", ex);
-      args.push(isDir ? src.abs + "/" : src.abs, isDir ? target + "/" : target);
-      const { code, stderr } = await rsync(args, onProgress);
-      if (code === 23 || code === 24) {
-        status = "warning";
-        messages.push(
-          `Some files were skipped (rsync ${code}): ${stderr.trim().split("\n").slice(-3).join(" | ")}`,
-        );
-      } else if (code !== 0) {
-        throw new Error(`rsync failed (${code}): ${stderr.trim().split("\n").slice(-3).join(" | ")}`);
+      // zipping needs local files: stage a direct remote source, zip locally, then upload
+      const work = backupWorkDir(id, "zip");
+      await fs.rm(work, { recursive: true, force: true });
+      try {
+        let srcAbs = src.loc.kind === "local" ? src.loc.abs : "";
+        if (!srcAbs) {
+          srcAbs = path.join(/*turbopackIgnore: true*/ work, "src");
+          const w = await transfer(src.loc, isDir, { kind: "local", abs: srcAbs }, { ...xfer, mirror: false });
+          warnings.push(...w.warnings);
+        }
+        const zipAbs = target.kind === "local" ? target.abs : path.join(/*turbopackIgnore: true*/ work, path.posix.basename(target.root));
+        await fs.mkdir(path.dirname(zipAbs), { recursive: true });
+        const r = await zipTo(srcAbs, isDir, zipAbs, excludes, onProgress);
+        messages.push(`zipped ${r.files} file(s), ${fmtBytes(r.bytes)} → ${fmtBytes(r.zipBytes)}`);
+        if (r.skipped) messages.push(`skipped ${r.skipped} symlink(s)/special file(s)`);
+        if (target.kind !== "local") {
+          const w = await transfer({ kind: "local", abs: zipAbs }, false, target, { ...xfer, mirror: false, excludes: [] });
+          warnings.push(...w.warnings);
+        }
+      } finally {
+        await fs.rm(work, { recursive: true, force: true });
       }
-    } catch (e: any) {
-      if (e.code !== "ENOENT") throw e;
-      // rsync not installed: plain recursive copy
-      await fs.cp(src.abs, target, { recursive: true, force: true, preserveTimestamps: true });
-      if (b.mode === "mirror") {
-        status = "warning";
-        messages.push("rsync not installed: copied files but could not delete extras (mirror)");
-      }
+    } else {
+      warnings.push(...(await transfer(src.loc, isDir, target, xfer)).warnings);
+    }
+    if (warnings.length) {
+      status = "warning";
+      messages.unshift(...warnings);
     }
 
     let pruned = 0;
@@ -298,7 +622,8 @@ export async function runBackup(b: BackupDoc, trigger: "manual" | "schedule" = "
     release();
     if (dest.folder && b.rescanDest) {
       // after pruning (or for a zip file), rescan the snapshot parent so the index matches
-      const rel = pruned || asZip ? dest.folderDir : path.posix.join(dest.folderDir, path.basename(target));
+      const name = target.kind === "local" ? path.basename(target.abs) : path.posix.basename(target.root);
+      const rel = pruned || asZip ? dest.folderDir : path.posix.join(dest.folderDir, name);
       try {
         if (!isJobRunning(dest.folder._id.toHexString())) await scanFolder(dest.folder, rel);
       } catch (e: any) {
@@ -317,7 +642,7 @@ export async function runBackup(b: BackupDoc, trigger: "manual" | "schedule" = "
         },
       },
     );
-    console.log(`backup ${b.name}: ${status} -> ${target}`);
+    console.log(`backup ${b.name}: ${status} -> ${locLabel(target)}`);
   } catch (e: any) {
     console.error("backup failed", b.name, e);
     await backups.updateOne(

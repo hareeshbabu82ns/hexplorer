@@ -47,6 +47,12 @@ export interface FolderFs {
   sha1Many?(items: { rel: string; size: number }[]): Promise<Map<string, string>>;
   /** delete a file or a directory tree; a missing entry is not an error */
   rm(rel: string, isDirectory: boolean): Promise<void>;
+  /** SMB only: create directories (parents first; existing ones are fine) */
+  mkdirs?(rels: string[]): Promise<void>;
+  /** SMB only: download files to local paths in one session; returns error messages */
+  getFiles?(items: { rel: string; local: string }[]): Promise<string[]>;
+  /** SMB only: upload local files in one session; returns error messages */
+  putFiles?(items: { local: string; rel: string }[]): Promise<string[]>;
 }
 
 export const isDirect = (f: Pick<FolderDoc, "mount">) => f.mount?.access === "direct";
@@ -373,6 +379,13 @@ function parseSmbLine(line: string): FsEntry | null {
   return { name: m[1], isDirectory, size: isDirectory ? 0 : Number(m[3]), mtime: d, birthtime: d };
 }
 
+/** per-file failures printed by an smbclient session (an existing dir on mkdir is fine) */
+const smbErrors = (output: string) =>
+  output
+    .split("\n")
+    .filter((l) => /NT_STATUS_/.test(l) && !/OBJECT_NAME_COLLISION/.test(l))
+    .map((l) => l.trim());
+
 function smbFs(remote: RemoteDoc, root: string): FolderFs {
   const [share, sub] = splitSmbPath(root);
   if (!share) throw new Error("Direct SMB folders need a share");
@@ -502,6 +515,35 @@ function smbFs(remote: RemoteDoc, root: string): FolderFs {
         await fs.rm(dir, { recursive: true, force: true });
       }
       return out;
+    },
+    async mkdirs(rels) {
+      const all = new Set<string>();
+      for (const rel of rels) {
+        const parts = safeRel(rel).split("/").filter(Boolean);
+        for (let i = 1; i <= parts.length; i++) all.add(parts.slice(0, i).join("/"));
+      }
+      // sub may not exist yet either (new destination)
+      const subParts = sub ? sub.split("/") : [];
+      const subDirs = subParts.map((_, i) => subParts.slice(0, i + 1).join("\\"));
+      const dirs = [...all].sort((a, b) => a.split("/").length - b.split("/").length);
+      const cmds = [...subDirs.map((d) => `mkdir "${d}"`), ...dirs.map((d) => `mkdir "${smbPath(d)}"`)];
+      if (!cmds.length) return;
+      const res = await run(cmds, 10 * 60_000);
+      if (fatal(res.err)) throw new Error(`${label}: ${res.err}`);
+    },
+    async getFiles(items) {
+      if (!items.length) return [];
+      for (const i of items) if (/["\n]/.test(i.local)) throw new Error(`Unsupported character in path: ${i.local}`);
+      const res = await run(items.map((i) => `get "${smbPath(i.rel)}" "${i.local}"`), 24 * 3600_000);
+      if (fatal(res.err)) throw new Error(`${label}: ${res.err}`);
+      return smbErrors(res.stdout + "\n" + res.stderr);
+    },
+    async putFiles(items) {
+      if (!items.length) return [];
+      for (const i of items) if (/["\n]/.test(i.local)) throw new Error(`Unsupported character in path: ${i.local}`);
+      const res = await run(items.map((i) => `put "${i.local}" "${smbPath(i.rel)}"`), 24 * 3600_000);
+      if (fatal(res.err)) throw new Error(`${label}: ${res.err}`);
+      return smbErrors(res.stdout + "\n" + res.stderr);
     },
     async rm(rel, isDirectory) {
       const r = safeRel(rel);

@@ -5,7 +5,7 @@ import path from "path";
 import archiver from "archiver";
 
 /** rsync-style exclude pattern → matcher on (relative posix path, name, isDir) */
-function excludeMatcher(patterns: string[]) {
+export function excludeMatcher(patterns: string[]) {
   const toRe = (glob: string) =>
     new RegExp(
       "^" +

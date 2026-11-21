@@ -133,6 +133,24 @@ export async function sshCommand(
   return { cmd: "ssh", args };
 }
 
+/**
+ * rsync over ssh (no mount): the `-e` remote shell, the `user@host` prefix and a
+ * wrapper that runs rsync through sshpass for password auth.
+ */
+export async function rsyncSsh(r: RemoteDoc) {
+  const q = (s: string) => (/[\s"']/.test(s) ? `"${s.replace(/"/g, '\\"')}"` : s);
+  const parts = ["ssh"];
+  for (const o of sshOpts(r)) parts.push("-o", q(o));
+  if (r.port) parts.push("-p", String(r.port));
+  const identity = await identityPath(r);
+  if (identity) parts.push("-i", q(identity), "-o", "IdentitiesOnly=yes");
+  const wrap = (args: string[]): { cmd: string; args: string[]; env?: Record<string, string> } =>
+    r.auth === "password"
+      ? { cmd: "sshpass", args: ["-e", "rsync", ...args], env: { SSHPASS: password(r) } }
+      : { cmd: "rsync", args };
+  return { shell: parts.join(" "), target: sshTarget(r), wrap };
+}
+
 /** stored login password of a remote (password auth only), "" otherwise */
 export function remotePassword(r: RemoteDoc) {
   return r.auth === "password" ? password(r) : "";
