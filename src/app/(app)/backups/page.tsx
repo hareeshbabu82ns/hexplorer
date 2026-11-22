@@ -8,13 +8,20 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { BackupDialog, BackupSource, describeSchedule } from "@/components/explorer/backup-dialog";
-import { deleteBackup, listBackups, runBackupNow, setBackupScheduleEnabled } from "@/lib/actions/backups";
+import {
+  deleteBackup,
+  duplicateBackup,
+  listBackups,
+  runBackupNow,
+  setBackupScheduleEnabled,
+} from "@/lib/actions/backups";
 import { EmptyState, ErrorBanner, Page, PageHeader, SectionTitle } from "@/components/app/page";
 import {
   Archive,
   ArrowDown,
   CalendarClock,
   Clock,
+  Copy,
   Folder,
   HardDrive,
   Loader2,
@@ -23,6 +30,7 @@ import {
   Play,
   Plus,
   Server,
+  Terminal,
   Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -56,6 +64,22 @@ export default function BackupsPage() {
   const pause = useMutation({
     mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) => setBackupScheduleEnabled(id, enabled),
     onSuccess: (_, v) => (toast.success(v.enabled ? "Schedule resumed" : "Schedule paused"), refresh()),
+    onError: (e: any) => toast.error(e.message),
+  });
+  const dup = useMutation({
+    mutationFn: async (j: BackupJob) => {
+      const id = await duplicateBackup(j.id);
+      return (await listBackups()).find((x) => x.id === id);
+    },
+    onSuccess: (copy) => {
+      refresh();
+      if (!copy) return;
+      toast.success(
+        `Created “${copy.name}”${copy.schedule ? " — its schedule is paused until you resume it" : ""}`,
+      );
+      // open the copy so source / destination can be changed right away
+      setSource({ job: copy });
+    },
     onError: (e: any) => toast.error(e.message),
   });
   const del = useMutation({
@@ -135,12 +159,41 @@ export default function BackupsPage() {
                   <span className="truncate">{j.sourceLabel}</span>
                 </div>
                 <ArrowDown className="text-muted-foreground size-3.5" />
-                <div className="flex min-w-0 items-center gap-1.5" title={j.destLabel}>
+                <div className="flex min-w-0 items-center gap-1.5" title={j.targetLabel}>
                   <span className="text-muted-foreground w-9 shrink-0 font-sans">To</span>
                   <KindIcon kind={j.dest.kind} />
-                  <span className="truncate">{j.destLabel}</span>
+                  <span className="truncate">{j.targetLabel}/</span>
+                </div>
+                <div className="text-muted-foreground font-sans">
+                  {j.mode === "snapshot"
+                    ? "New timestamped copy each run"
+                    : j.intoSubfolder
+                      ? "Source copied as a sub folder of the destination"
+                      : "Source contents copied straight into the destination"}
                 </div>
               </div>
+              {(j.preScript || j.postScript) && (
+                <div className="grid gap-1 text-xs">
+                  {(
+                    [
+                      ["Before", j.preScript],
+                      [
+                        `After${j.postScript?.when && j.postScript.when !== "always" ? ` (on ${j.postScript.when})` : ""}`,
+                        j.postScript,
+                      ],
+                    ] as const
+                  ).map(
+                    ([lbl, h]) =>
+                      h && (
+                        <div key={lbl} className="flex min-w-0 items-center gap-1.5" title={hookSummary(h)}>
+                          <Terminal className="text-muted-foreground size-3.5 shrink-0" />
+                          <span className="text-muted-foreground shrink-0">{lbl}:</span>
+                          <span className="truncate">{hookSummary(h)}</span>
+                        </div>
+                      ),
+                  )}
+                </div>
+              )}
 
               {j.schedule && (
                 <div className="flex items-center gap-1.5 text-xs">
@@ -177,7 +230,7 @@ export default function BackupsPage() {
                   {j.lastRun.message}
                 </p>
               )}
-              <div className="mt-auto flex gap-2">
+              <div className="mt-auto flex flex-wrap gap-2">
                 <Button
                   size="sm"
                   disabled={j.status === "running" || run.isPending}
@@ -192,6 +245,15 @@ export default function BackupsPage() {
                   onClick={() => setSource({ job: j })}
                 >
                   <Pencil className="size-4" /> Edit
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  title="Make a copy of this job"
+                  disabled={dup.isPending}
+                  onClick={() => dup.mutate(j)}
+                >
+                  <Copy className="size-4" /> Duplicate
                 </Button>
                 {j.schedule && (
                   <Button
@@ -226,4 +288,11 @@ export default function BackupsPage() {
 function KindIcon({ kind }: { kind: BackupEndpoint["kind"] }) {
   const Icon = kind === "folder" ? Folder : kind === "remote" ? Server : HardDrive;
   return <Icon className="text-muted-foreground size-3.5 shrink-0" />;
+}
+
+function hookSummary(h: BackupHook) {
+  const vals = Object.entries(h.params)
+    .filter(([, v]) => v)
+    .map(([k, v]) => `${k}=${v}`);
+  return `${h.scriptName ?? "script"}${vals.length ? ` (${vals.join(", ")})` : ""}`;
 }

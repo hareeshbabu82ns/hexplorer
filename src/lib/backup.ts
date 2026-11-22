@@ -4,6 +4,7 @@ import path from "path";
 import {
   BackupDoc,
   BackupEndpointDoc,
+  BackupHookDoc,
   BackupScheduleDoc,
   collections,
   FolderDoc,
@@ -12,6 +13,8 @@ import {
   RemoteDoc,
 } from "./db";
 import { excludeMatcher, zipTo } from "./backup-zip";
+import { loadScript, runScriptHeadless } from "./commands/headless";
+import { decryptSecret } from "./secrets";
 import { FsEntry, isDirect, remoteFs } from "./folder-fs";
 import { holdFolders, isJobRunning, runningJobs } from "./jobs";
 import {
@@ -227,6 +230,70 @@ export function endpointLabel(
   if (ep.kind === "remote")
     return `${names.remotes.get(ep.remoteId.toHexString()) ?? "(deleted remote)"}:${ep.path || "~"}`;
   return ep.path;
+}
+
+/** old jobs (no flag) always copied into a sub folder named after the source */
+export const usesSubfolder = (b: Pick<BackupDoc, "mode" | "intoSubfolder">) =>
+  b.mode === "snapshot" || b.intoSubfolder !== false;
+
+/**
+ * name of the entry created inside the destination, or null when the source's
+ * contents go straight into the destination (sync / mirror without sub folder).
+ * A single-file source always keeps its name.
+ */
+export function targetName(
+  b: Pick<BackupDoc, "mode" | "intoSubfolder" | "archive">,
+  baseName: string,
+  isDir: boolean,
+  when = new Date(),
+) {
+  if (b.mode === "snapshot") return `${baseName}-${stamp(when)}${b.archive === "zip" ? ".zip" : ""}`;
+  if (!isDir || usesSubfolder(b)) return baseName;
+  return null;
+}
+
+/** last path segment of an endpoint, used to name the copy */
+export function endpointBaseName(
+  ep: BackupEndpointDoc,
+  names: { folders: Map<string, string>; remotes: Map<string, string> },
+) {
+  const p = ep.kind === "folder" ? ep.dir : ep.path;
+  const seg = p.split("/").filter(Boolean).pop();
+  if (seg) return seg;
+  if (ep.kind === "folder") return slugify(names.folders.get(ep.folderId.toHexString()) ?? "folder");
+  if (ep.kind === "remote") return slugify(names.remotes.get(ep.remoteId.toHexString()) ?? "remote");
+  return "root";
+}
+
+/* ------------------------------- pre / post -------------------------------- */
+
+export type HookContext = Record<string, string>;
+
+export const HOOK_PLACEHOLDERS = ["name", "id", "mode", "trigger", "source", "dest", "target", "status", "message"];
+
+/** replace {name} placeholders in a parameter value with backup run values (unknown ones are left alone) */
+export function expandHookValue(v: string, ctx: HookContext) {
+  return v.replace(/\{([a-z_]+)\}/gi, (m, k: string) => ctx[k.toLowerCase()] ?? m);
+}
+
+/** run a hook's saved script and describe the outcome */
+async function hook(label: string, h: BackupHookDoc, ctx: HookContext) {
+  try {
+    const script = await loadScript(h.scriptId);
+    if (!script) return { ok: false, message: `${label}: the script no longer exists` };
+    const params: Record<string, string> = {};
+    for (const [k, v] of Object.entries(h.params ?? {})) params[k] = expandHookValue(v, ctx);
+    for (const [k, v] of Object.entries(h.secretsEnc ?? {})) params[k] = decryptSecret(v);
+    const r = await runScriptHeadless(script, {
+      targets: h.targets,
+      params,
+      title: `${label} · ${ctx.name}`,
+    });
+    console.log(`backup ${ctx.name}: ${label} “${script.name}” ${r.ok ? "ok" : "failed"}`);
+    return { ok: r.ok, message: r.ok ? null : `${label} “${script.name}”: ${r.message}` };
+  } catch (e: any) {
+    return { ok: false, message: `${label} failed: ${e.message ?? e}` };
+  }
 }
 
 /* ---------------------------------- rsync --------------------------------- */
@@ -528,7 +595,7 @@ export async function runBackup(b: BackupDoc, trigger: "manual" | "schedule" = "
   const id = b._id.toHexString();
   if (runningJobs.has(id)) throw new Error("This backup is already running");
   runningJobs.add(id);
-  const { backups } = await collections();
+  const { backups, folders, remotes } = await collections();
   const startedAt = new Date();
   let release = () => {};
   const cleanups: (() => Promise<void>)[] = [];
@@ -537,9 +604,41 @@ export async function runBackup(b: BackupDoc, trigger: "manual" | "schedule" = "
     { $set: { status: "running", progress: 0, lastRun: { startedAt, message: null, trigger } } },
   );
 
+  const srcEp = normEndpoint(b.source);
+  const destEp = normEndpoint(b.dest);
+  let status: BackupDoc["status"] = "success";
+  const messages: string[] = [];
+  let targetLabel = "";
+  const [fNames, rNames] = await Promise.all([
+    folders.find({}, { projection: { name: 1 } }).toArray(),
+    remotes.find({}, { projection: { name: 1 } }).toArray(),
+  ]).catch(() => [[], []] as const);
+  const names = {
+    folders: new Map(fNames.map((x) => [x._id.toHexString(), x.name])),
+    remotes: new Map(rNames.map((x) => [x._id.toHexString(), x.name])),
+  };
+  const ctx = (): HookContext => ({
+    id,
+    name: b.name,
+    mode: b.mode,
+    trigger,
+    source: endpointLabel(srcEp, names),
+    dest: endpointLabel(destEp, names),
+    target: targetLabel,
+    status: status === "running" ? "" : status,
+    message: messages.join("; "),
+  });
+
   try {
-    const srcEp = normEndpoint(b.source);
-    const destEp = normEndpoint(b.dest);
+    if (b.preScript?.scriptId) {
+      const r = await hook("pre-backup script", b.preScript, ctx());
+      if (!r.ok) {
+        if (b.preScript.abortOnFail !== false) throw new Error(`${r.message} — backup not run`);
+        status = "warning";
+        messages.push(r.message!);
+      }
+    }
+
     const src = await resolveEndpoint(srcEp, "src", id);
     cleanups.push(src.cleanup);
     const dest = await resolveEndpoint(destEp, "dest", id);
@@ -553,16 +652,15 @@ export async function runBackup(b: BackupDoc, trigger: "manual" | "schedule" = "
     const isDir = st.isDir;
     const destRoot = dest.loc;
     const asZip = b.mode === "snapshot" && b.archive === "zip";
-    const target = joinLoc(
-      destRoot,
-      b.mode === "snapshot" ? `${src.baseName}-${stamp()}${asZip ? ".zip" : ""}` : src.baseName,
-    );
+    const name = targetName(b, src.baseName, isDir);
+    const target = name ? joinLoc(destRoot, name) : destRoot;
     if (src.loc.kind === "local" && target.kind === "local" && srcEp.kind !== "remote" && destEp.kind !== "remote") {
       if (isInside(target.abs, src.loc.abs)) throw new Error("Destination is inside the source");
       if (isInside(src.loc.abs, target.abs)) throw new Error("Source is inside the destination");
     }
 
-    await backups.updateOne({ _id: b._id }, { $set: { "lastRun.target": locLabel(target) } });
+    targetLabel = locLabel(target);
+    await backups.updateOne({ _id: b._id }, { $set: { "lastRun.target": targetLabel } });
     await ensureDir(isDir && !asZip ? target : destRoot);
 
     let lastWrite = 0;
@@ -573,8 +671,6 @@ export async function runBackup(b: BackupDoc, trigger: "manual" | "schedule" = "
     };
 
     const excludes = (b.exclude ?? "").split(",").map((e) => e.trim()).filter(Boolean);
-    let status: BackupDoc["status"] = "success";
-    const messages: string[] = [];
     const warnings: string[] = [];
     const xfer: XferOpts = { mirror: b.mode === "mirror", excludes, onProgress, stageDir: backupWorkDir(id, "stage") };
     if (asZip) {
@@ -621,43 +717,47 @@ export async function runBackup(b: BackupDoc, trigger: "manual" | "schedule" = "
 
     release();
     if (dest.folder && b.rescanDest) {
-      // after pruning (or for a zip file), rescan the snapshot parent so the index matches
-      const name = target.kind === "local" ? path.basename(target.abs) : path.posix.basename(target.root);
-      const rel = pruned || asZip ? dest.folderDir : path.posix.join(dest.folderDir, name);
+      // after pruning (or for a zip file / contents copied into dest), rescan the parent so the index matches
+      const rel = pruned || asZip || !name ? dest.folderDir : path.posix.join(dest.folderDir, name);
       try {
         if (!isJobRunning(dest.folder._id.toHexString())) await scanFolder(dest.folder, rel);
       } catch (e: any) {
         messages.push(`destination rescan failed: ${e.message}`);
       }
     }
+    console.log(`backup ${b.name}: ${status} -> ${targetLabel}`);
+  } catch (e: any) {
+    console.error("backup failed", b.name, e);
+    status = "error";
+    messages.unshift(e.message ?? String(e));
+  } finally {
+    release();
+    for (const c of cleanups.reverse()) await c();
+  }
 
+  try {
+    const post = b.postScript;
+    const when = post?.when ?? "always";
+    const failed = status === "error";
+    if (post?.scriptId && (when === "always" || (when === "success") !== failed)) {
+      const r = await hook("post-backup script", post, ctx());
+      if (!r.ok) {
+        if (status === "success") status = "warning";
+        messages.push(r.message!);
+      }
+    }
     await backups.updateOne(
       { _id: b._id },
       {
         $set: {
           status,
-          progress: 100,
+          ...(status === "error" ? {} : { progress: 100 }),
           "lastRun.finishedAt": new Date(),
           "lastRun.message": messages.join("; ") || null,
         },
       },
     );
-    console.log(`backup ${b.name}: ${status} -> ${locLabel(target)}`);
-  } catch (e: any) {
-    console.error("backup failed", b.name, e);
-    await backups.updateOne(
-      { _id: b._id },
-      {
-        $set: {
-          status: "error",
-          "lastRun.finishedAt": new Date(),
-          "lastRun.message": e.message ?? String(e),
-        },
-      },
-    );
   } finally {
-    release();
-    for (const c of cleanups.reverse()) await c();
     runningJobs.delete(id);
   }
 }

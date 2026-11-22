@@ -4,7 +4,17 @@ import { ObjectId } from "mongodb";
 
 import { getDb, RemoteDoc } from "@/lib/db";
 import { probeHosts, type HostHealth } from "@/lib/commands/health";
-import { cancelRun, Chunk, getLiveRun, RunDoc, startRun, StartRunInput, TargetStatus } from "@/lib/commands/runner";
+import {
+  cancelRun,
+  Chunk,
+  getLiveRun,
+  LOCAL_TARGET,
+  LOCAL_TARGET_NAME,
+  RunDoc,
+  startRun,
+  StartRunInput,
+  TargetStatus,
+} from "@/lib/commands/runner";
 import { SNIPPETS } from "@/lib/commands/snippets";
 import type { ScriptParam, ScriptStep } from "@/lib/commands/template";
 
@@ -18,6 +28,8 @@ export interface CmdTarget {
   host: string;
   user: string | null;
   port: number | null;
+  /** the hexplorer host itself (commands run locally, not over ssh) */
+  local?: boolean;
 }
 
 export interface CmdGroup {
@@ -123,16 +135,27 @@ export async function listCmdTargets() {
       remotes.find({ $or: [{ type: "ssh" }, { type: { $exists: false } }] }).sort({ name: 1 }).toArray(),
       groups.find().sort({ name: 1 }).toArray(),
     ]);
+    const local: CmdTarget = {
+      id: LOCAL_TARGET,
+      name: LOCAL_TARGET_NAME,
+      host: "localhost",
+      user: process.env.USER ?? null,
+      port: null,
+      local: true,
+    };
     return {
-      targets: r.map(
-        (x): CmdTarget => ({
-          id: x._id.toHexString(),
-          name: x.name,
-          host: x.host,
-          user: x.user ?? null,
-          port: x.port ?? null,
-        }),
-      ),
+      targets: [
+        local,
+        ...r.map(
+          (x): CmdTarget => ({
+            id: x._id.toHexString(),
+            name: x.name,
+            host: x.host,
+            user: x.user ?? null,
+            port: x.port ?? null,
+          }),
+        ),
+      ],
       groups: g.map((x): CmdGroup => ({ id: x._id.toHexString(), name: x.name, remoteIds: x.remoteIds ?? [] })),
     };
   });
@@ -190,13 +213,19 @@ function cleanScript(input: CmdScriptInput) {
     if (RESERVED.has(n)) throw new Error(`“${n}” is a built-in variable and cannot be a parameter`);
     if (seen.has(n)) throw new Error(`Duplicate parameter “${n}”`);
     seen.add(n);
+    const options = p.type === "select" ? (p.options ?? []).map((o) => o.trim()).filter(Boolean) : undefined;
+    if (p.type === "select" && !options!.length) throw new Error(`Parameter “${n}” needs at least one option`);
+    if (p.type === "select" && p.default && !options!.includes(p.default))
+      throw new Error(`Default of “${n}” is not one of its options`);
+    if (p.type === "number" && p.default && isNaN(Number(p.default)))
+      throw new Error(`Default of “${n}” must be a number`);
     return {
       name: n,
       label: p.label?.trim() || undefined,
       type: (["text", "number", "select", "bool", "secret"] as const).includes(p.type) ? p.type : "text",
       // secrets are never stored with a default
       default: p.type === "secret" ? undefined : (p.default ?? undefined),
-      options: p.type === "select" ? (p.options ?? []).map((o) => o.trim()).filter(Boolean) : undefined,
+      options,
       required: !!p.required,
       description: p.description?.trim() || undefined,
     };
@@ -251,6 +280,33 @@ export async function deleteCmdScript(id: string) {
   return guarded(async () => {
     const { scripts } = await cols();
     await scripts.deleteOne({ _id: oid(id) });
+  });
+}
+
+/** copy a saved script as "<name> (copy)", "<name> (copy 2)", … with fresh step ids and no run stats */
+export async function duplicateCmdScript(id: string) {
+  return guarded(async () => {
+    const { scripts } = await cols();
+    const src = await scripts.findOne({ _id: oid(id) });
+    if (!src) throw new Error("Script not found");
+    const base = String(src.name).replace(/ \(copy(?: \d+)?\)$/, "");
+    const taken = new Set(
+      (await scripts.find({}, { projection: { name: 1 } }).toArray()).map((d) => String(d.name)),
+    );
+    let name = `${base} (copy)`;
+    for (let n = 2; taken.has(name); n++) name = `${base} (copy ${n})`;
+    const doc = cleanScript({
+      name,
+      description: src.description ?? "",
+      tags: src.tags ?? [],
+      params: src.params ?? [],
+      steps: (src.steps ?? []).map((st: ScriptStep) => ({ ...st, id: "" })),
+      defaultTargets: src.defaultTargets ?? [],
+      favorite: false,
+    });
+    const now = new Date();
+    const res = await scripts.insertOne({ ...doc, runCount: 0, createdAt: now, updatedAt: now });
+    return serializeScript({ ...doc, _id: res.insertedId, updatedAt: now });
   });
 }
 

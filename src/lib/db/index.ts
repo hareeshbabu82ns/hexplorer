@@ -100,6 +100,21 @@ export type BackupScheduleDoc = {
   weekday: number;
 };
 
+/** a saved Commands script run before / after a backup */
+export type BackupHookDoc = {
+  scriptId: ObjectId;
+  /** remote ids, or "local" for the hexplorer host */
+  targets: string[];
+  /** parameter values; may contain {placeholders} filled from the backup run */
+  params: Record<string, string>;
+  /** values of secret parameters, encrypted with APP_SECRET */
+  secretsEnc?: Record<string, string>;
+  /** pre: abort the backup when the script fails (otherwise only warn) */
+  abortOnFail?: boolean;
+  /** post: when to run */
+  when?: "always" | "success" | "failure";
+};
+
 export interface BackupDoc {
   _id: ObjectId;
   name: string;
@@ -114,6 +129,13 @@ export interface BackupDoc {
   keep?: number | null;
   /** snapshot mode: store each snapshot as <name>-<stamp>.zip instead of a folder */
   archive?: "zip" | null;
+  /**
+   * sync / mirror: copy into <dest>/<source name> (true) or put the source's
+   * contents directly into <dest> (false). Missing on old jobs = true.
+   */
+  intoSubfolder?: boolean;
+  preScript?: BackupHookDoc | null;
+  postScript?: BackupHookDoc | null;
   schedule?: BackupScheduleDoc | null;
   nextRunAt?: Date | null;
   createdAt: Date;

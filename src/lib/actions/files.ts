@@ -90,25 +90,46 @@ export async function searchFiles(params: SearchFilesParams): Promise<SearchFile
 
 /** DB only */
 export async function findDuplicates(params: {
-  folderIds?: string[];
+  /** locations to compare: data folders, optionally narrowed to a sub path; none = all folders */
+  scopes?: DuplicateScope[];
   mode: DuplicateMode;
-  dir?: string;
   minSize?: number;
   limit?: number;
+  /** only groups with copies in at least two of the scopes */
+  acrossScopes?: boolean;
 }): Promise<DuplicateResult> {
   const { files, folders } = await collections();
-  const folderIds = params.folderIds?.length
-    ? params.folderIds.map(toObjectId)
+  const scopes = (params.scopes ?? [])
+    .filter((s) => s.folderId)
+    .map((s) => ({ folderId: toObjectId(s.folderId), dir: (s.dir ?? "").replace(/^\/+|\/+$/g, "") }));
+  const folderIds = scopes.length
+    ? [...new Map(scopes.map((s) => [s.folderId.toHexString(), s.folderId])).values()]
     : (await folders.find({}, { projection: { _id: 1 } }).toArray()).map((f) => f._id);
 
   const match: Filter<FileDoc> = {
-    folderId: { $in: folderIds },
     isDirectory: false,
     size: { $gte: Math.max(params.minSize ?? 1, 0) },
   };
-  const dir = (params.dir ?? "").replace(/^\/+|\/+$/g, "");
-  if (dir) Object.assign(match, dirScope(dir));
+  if (scopes.length) match.$or = scopes.map((s) => ({ folderId: s.folderId, ...dirScope(s.dir) }));
+  else match.folderId = { $in: folderIds };
   if (params.mode === "content") match.hash = { $type: "string" };
+
+  // which scope each file belongs to (first match), to require copies in 2+ locations
+  const across = !!params.acrossScopes && scopes.length > 1;
+  const scopeIdx = {
+    $switch: {
+      branches: scopes.map((s, i) => ({
+        case: {
+          $and: [
+            { $eq: ["$folderId", s.folderId] },
+            ...(s.dir ? [{ $regexMatch: { input: "$dir", regex: `^${escapeRegex(s.dir)}(/|$)` } }] : []),
+          ],
+        },
+        then: i,
+      })),
+      default: -1,
+    },
+  };
 
   const groupKey =
     params.mode === "name"
@@ -134,9 +155,10 @@ export async function findDuplicates(params: {
             size: { $max: "$size" },
             total: { $sum: "$size" },
             ids: { $push: "$_id" },
+            ...(across ? { scopes: { $addToSet: scopeIdx } } : {}),
           },
         },
-        { $match: { count: { $gt: 1 } } },
+        { $match: across ? { count: { $gt: 1 }, "scopes.1": { $exists: true } } : { count: { $gt: 1 } } },
         { $addFields: { wasted: { $subtract: ["$total", "$size"] } } },
         {
           $facet: {

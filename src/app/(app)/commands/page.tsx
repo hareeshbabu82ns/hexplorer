@@ -61,7 +61,7 @@ export default function CommandsPage() {
           <ScriptLibrary onOpen={open} />
         </TabsContent>
         <TabsContent value="fleet">
-          <Fleet targets={targets} onOpen={open} />
+          <Fleet targets={targets.filter((t) => !t.local)} onOpen={open} />
         </TabsContent>
         <TabsContent value="history">
           <RunHistory onOpen={open} />

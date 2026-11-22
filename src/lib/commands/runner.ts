@@ -77,8 +77,21 @@ const MAX_LIVE_BYTES = 4 * 1024 * 1024;
 const MAX_STORED_BYTES = 512 * 1024;
 const KEEP_FINISHED_MS = 15 * 60 * 1000;
 
-const g = globalThis as unknown as { _hexRuns?: Map<string, LiveRun> };
+/** target id for running on the hexplorer host itself (no ssh) */
+export const LOCAL_TARGET = "local";
+export const LOCAL_TARGET_NAME = "This server";
+
+const g = globalThis as unknown as { _hexRuns?: Map<string, LiveRun>; _hexRunDone?: Map<string, Promise<void>> };
 const runs = (g._hexRuns ??= new Map<string, LiveRun>());
+const runDone = (g._hexRunDone ??= new Map<string, Promise<void>>());
+
+/** resolves with the final state once every target of a run has finished */
+export async function waitForRun(id: string): Promise<RunState> {
+  await runDone.get(id);
+  const r = runs.get(id);
+  if (!r) throw new Error("Run not found");
+  return r;
+}
 
 export function getLiveRun(id: string): RunState | undefined {
   return runs.get(id);
@@ -121,16 +134,19 @@ function remoteWrapper(sudo: boolean, withPassword: boolean) {
 function execOnce(
   run: LiveRun,
   t: TargetRun,
-  remote: RemoteDoc,
+  remote: RemoteDoc | null,
   script: string,
   sudoPw: string,
   sudo: boolean,
   timeoutMs: number,
 ): Promise<{ code: number | null; timedOut: boolean }> {
   return new Promise(async (resolve) => {
-    let c;
+    let c: { cmd: string; args: string[]; env?: Record<string, string> };
     try {
-      c = await sshCommand(remote, remoteWrapper(sudo, !!sudoPw));
+      // local: same wrapper through sh; no sudo needed when already root
+      c = remote
+        ? await sshCommand(remote, remoteWrapper(sudo, !!sudoPw))
+        : { cmd: "/bin/sh", args: ["-c", remoteWrapper(sudo && process.getuid?.() !== 0, false)] };
     } catch (e: any) {
       push(t, "e", `${e?.message || e}\n`);
       return resolve({ code: -1, timedOut: false });
@@ -170,22 +186,25 @@ function execOnce(
 async function runTarget(run: LiveRun, t: TargetRun, remote: RemoteDoc | null, input: StartRunInput) {
   t.status = "running";
   t.startedAt = Date.now();
-  if (!remote) {
+  const local = t.remoteId === LOCAL_TARGET;
+  if (!remote && !local) {
     push(t, "e", "Remote no longer exists\n");
     return finishTarget(t, "failed", -1);
   }
-  if ((remote.type ?? "ssh") !== "ssh") {
+  if (remote && (remote.type ?? "ssh") !== "ssh") {
     push(t, "e", "Commands can only run on SSH remotes\n");
     return finishTarget(t, "failed", -1);
   }
-  const info: TargetInfo = { id: t.remoteId, name: remote.name, host: remote.host, user: remote.user };
+  const info: TargetInfo = remote
+    ? { id: t.remoteId, name: remote.name, host: remote.host, user: remote.user }
+    : { id: LOCAL_TARGET, name: LOCAL_TARGET_NAME, host: "localhost", user: process.env.USER ?? null };
   const sel = input.selection?.[t.remoteId] ?? input.selection?.["*"] ?? [];
   const items = input.foreach ? sel : [undefined];
   if (input.foreach && !items.length) {
     push(t, "i", "Nothing selected for this target — skipped\n");
     return finishTarget(t, "success", 0);
   }
-  const sudoPw = input.sudo ? remotePassword(remote) || input.sudoPassword || "" : "";
+  const sudoPw = input.sudo && remote ? remotePassword(remote) || input.sudoPassword || "" : "";
   const timeoutMs = Math.min(Math.max(Number(input.timeoutSec) || 300, 5), 6 * 3600) * 1000;
 
   let firstFail: number | null = null;
@@ -222,12 +241,12 @@ function finishTarget(t: TargetRun, status: TargetStatus, code: number | null) {
 /** load remotes, create the run and execute it in the background; returns the run id */
 export async function startRun(remoteIds: string[], input: StartRunInput): Promise<string> {
   if (!input.command?.trim()) throw new Error("Command is empty");
-  const ids = [...new Set(remoteIds)].filter((id) => ObjectId.isValid(id));
+  const ids = [...new Set(remoteIds)].filter((id) => id === LOCAL_TARGET || ObjectId.isValid(id));
   if (!ids.length) throw new Error("Pick at least one target");
   const db = await getDb();
   const docs = await db
     .collection<RemoteDoc>("remotes")
-    .find({ _id: { $in: ids.map((i) => new ObjectId(i)) } })
+    .find({ _id: { $in: ids.filter((i) => i !== LOCAL_TARGET).map((i) => new ObjectId(i)) } })
     .toArray();
   const byId = new Map(docs.map((d) => [d._id.toHexString(), d]));
   const secrets = (input.secretParams ?? []).map((n) => input.params[n]).filter(Boolean) as string[];
@@ -248,8 +267,8 @@ export async function startRun(remoteIds: string[], input: StartRunInput): Promi
     status: "running",
     targets: ids.map((rid) => ({
       remoteId: rid,
-      name: byId.get(rid)?.name ?? "(deleted)",
-      host: byId.get(rid)?.host ?? "",
+      name: rid === LOCAL_TARGET ? LOCAL_TARGET_NAME : (byId.get(rid)?.name ?? "(deleted)"),
+      host: rid === LOCAL_TARGET ? "localhost" : (byId.get(rid)?.host ?? ""),
       status: "queued",
       exitCode: null,
       startedAt: null,
@@ -279,9 +298,11 @@ export async function startRun(remoteIds: string[], input: StartRunInput): Promi
       });
     }
   };
-  Promise.all(Array.from({ length: Math.min(limit, queue.length) }, worker))
+  const done = Promise.all(Array.from({ length: Math.min(limit, queue.length) }, worker))
     .then(() => finishRun(run))
     .catch((e) => console.error("command run failed", e));
+  runDone.set(id, done);
+  void done.finally(() => setTimeout(() => runDone.delete(id), KEEP_FINISHED_MS).unref?.());
   return id;
 }
 

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Eraser, FilePlus2, KeyRound, ListPlus, Loader2, Play, Save, SlidersHorizontal, Square } from "lucide-react";
+import { Eraser, FilePlus2, KeyRound, ListPlus, Loader2, Play, Plus, Save, SlidersHorizontal, Square } from "lucide-react";
 
 import {
   cancelCmdRun,
@@ -467,15 +467,36 @@ export function CommandConsole({
             )}
           </div>
         </div>
-        {draft.params.length > 0 && (
-          <div className="border-t pt-4">
+        <div className="space-y-3 border-t pt-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="flex items-center gap-1.5 text-sm font-medium">
+              <SlidersHorizontal className="text-muted-foreground size-4" /> Input parameters
+            </span>
+            <span className="text-muted-foreground text-xs">
+              {draft.params.length
+                ? "Values used for this run; saved scripts ask for them each time (and backup jobs store them)."
+                : "None yet — define inputs to reuse this script with different values, e.g. a service name or path."}
+            </span>
+            <Button size="xs" variant="outline" className="ml-auto" onClick={() => setParamsOpen(true)}>
+              {draft.params.length ? (
+                <>
+                  <SlidersHorizontal /> Edit parameters
+                </>
+              ) : (
+                <>
+                  <Plus /> Define parameters
+                </>
+              )}
+            </Button>
+          </div>
+          {draft.params.length > 0 && (
             <ParamInputs
               params={draft.params}
               values={draft.paramValues}
               onChange={(v) => patch({ paramValues: v })}
             />
-          </div>
-        )}
+          )}
+        </div>
       </section>
 
       {draft.steps.map((step, i) => {
@@ -541,6 +562,7 @@ export function CommandConsole({
         open={paramsOpen}
         onOpenChange={setParamsOpen}
         params={draft.params}
+        commands={draft.steps.map((st) => st.command)}
         onSave={(p) => patch({ params: p })}
       />
 

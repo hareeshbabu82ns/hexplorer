@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   BookPlus,
+  Copy,
   Download,
   FileCode2,
   Library,
@@ -19,6 +20,7 @@ import {
 
 import {
   deleteCmdScript,
+  duplicateCmdScript,
   importCmdScripts,
   importCmdSnippet,
   listCmdScripts,
@@ -76,6 +78,14 @@ export function ScriptLibrary({ onOpen }: { onOpen: (seed: ConsoleSeed) => void 
   const del = useMutation({
     mutationFn: (s: CmdScript) => unwrap(deleteCmdScript(s.id)),
     onSuccess: () => (toast.success("Script deleted"), refresh()),
+    onError: (e: any) => toast.error(e.message),
+  });
+  const dup = useMutation({
+    mutationFn: (s: CmdScript) => unwrap(duplicateCmdScript(s.id)),
+    onSuccess: (copy) => {
+      toast.success(`Created “${copy.name}”`, { action: { label: "Open", onClick: () => open(copy) } });
+      refresh();
+    },
     onError: (e: any) => toast.error(e.message),
   });
   const addSnippet = useMutation({
@@ -225,6 +235,9 @@ export function ScriptLibrary({ onOpen }: { onOpen: (seed: ConsoleSeed) => void 
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
+                      <DropdownMenuItem disabled={dup.isPending} onClick={() => dup.mutate(s)}>
+                        <Copy /> Duplicate
+                      </DropdownMenuItem>
                       <DropdownMenuItem
                         onClick={() =>
                           download(

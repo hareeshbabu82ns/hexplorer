@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { AlertTriangle, ArrowDown, FolderInput, FolderTree } from "lucide-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -22,8 +23,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { cn } from "@/lib/utils";
 import { saveBackup } from "@/lib/actions/backups";
 import { EndpointPicker, useRemotes } from "./backup-endpoint";
+import { HookEditor, hookForm, hookInput, type HookForm } from "./backup-hook";
 import { useFolders } from "./use-folders";
 
 /**
@@ -39,9 +42,9 @@ export type BackupSource =
   | null;
 
 const MODES: { value: BackupMode; label: string; hint: string }[] = [
-  { value: "sync", label: "Sync", hint: "Copy new/changed files into <dest>/<name>; never deletes" },
-  { value: "mirror", label: "Mirror", hint: "Make <dest>/<name> an exact copy (deletes extra files there)" },
-  { value: "snapshot", label: "Snapshot", hint: "New timestamped copy each run: <dest>/<name>-YYYYMMDD-HHMMSS" },
+  { value: "sync", label: "Sync", hint: "Copy new and changed files to the target; never deletes anything" },
+  { value: "mirror", label: "Mirror", hint: "Make the target an exact copy of the source (deletes extra files in the target)" },
+  { value: "snapshot", label: "Snapshot", hint: "A new timestamped copy inside the destination on every run" },
 ];
 
 const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -65,6 +68,10 @@ type Form = {
   rescan: boolean;
   keep: string;
   zip: boolean;
+  /** sync / mirror: copy into <dest>/<source name> instead of straight into <dest> */
+  subfolder: boolean;
+  pre: HookForm;
+  post: HookForm;
   schedule: BackupSchedule;
 };
 
@@ -81,6 +88,9 @@ function initialForm(init: NonNullable<BackupSource>, folders: { id: string }[] 
       rescan: j.rescanDest,
       keep: j.keep ? String(j.keep) : "",
       zip: j.archive === "zip",
+      subfolder: j.intoSubfolder,
+      pre: hookForm(j.preScript),
+      post: hookForm(j.postScript),
       schedule: j.schedule ?? OFF,
     };
   }
@@ -99,6 +109,9 @@ function initialForm(init: NonNullable<BackupSource>, folders: { id: string }[] 
     rescan: true,
     keep: "",
     zip: false,
+    subfolder: false,
+    pre: hookForm(null),
+    post: hookForm(null),
     schedule: OFF,
   };
 }
@@ -132,6 +145,9 @@ export function BackupDialog({ source, onClose }: { source: BackupSource; onClos
           rescanDest: form!.rescan,
           keep: form!.keep ? Number(form!.keep) : null,
           archive: form!.mode === "snapshot" && form!.zip ? "zip" : null,
+          intoSubfolder: form!.mode === "snapshot" || form!.subfolder,
+          preScript: hookInput(form!.pre),
+          postScript: hookInput(form!.post),
           schedule: form!.schedule,
         },
         runNow,
@@ -161,6 +177,17 @@ export function BackupDialog({ source, onClose }: { source: BackupSource; onClos
 
   const f = form;
   const s = f?.schedule ?? OFF;
+  const trim = (p: string) => p.replace(/\/+$/, "");
+  const srcLabel = f ? trim(label(f.source)) : "";
+  const destLabel = f ? trim(label(f.dest)) : "";
+  const subfolder = f?.mode === "snapshot" || !!f?.subfolder;
+  const targetLabel = !f
+    ? ""
+    : f.mode === "snapshot"
+      ? `${destLabel}/${baseName(f.source)}-<timestamp>${f.zip ? ".zip" : ""}`
+      : subfolder
+        ? `${destLabel}/${baseName(f.source)}`
+        : destLabel;
   const setSchedule = (p: Partial<BackupSchedule>) => patch({ schedule: { ...s, ...p } });
 
   return (
@@ -175,11 +202,11 @@ export function BackupDialog({ source, onClose }: { source: BackupSource; onClos
         {f && (
           <div className="grid gap-5">
             <div className="grid gap-1.5">
-              <Label>Source</Label>
+              <Label>Source — what to copy</Label>
               <EndpointPicker role="source" value={f.source} onChange={(source) => patch({ source })} />
             </div>
             <div className="grid gap-1.5">
-              <Label>Destination</Label>
+              <Label>Destination — where to put it</Label>
               <EndpointPicker role="dest" value={f.dest} onChange={(dest) => patch({ dest })} />
             </div>
 
@@ -223,6 +250,50 @@ export function BackupDialog({ source, onClose }: { source: BackupSource; onClos
                     </p>
                   </div>
                 </div>
+              )}
+            </div>
+
+            {f.mode !== "snapshot" && (
+              <div className="grid gap-1.5">
+                <Label>Copy as</Label>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <LayoutChoice
+                    active={!f.subfolder}
+                    onClick={() => patch({ subfolder: false })}
+                    icon={FolderInput}
+                    title="Contents into destination"
+                    example={`${srcLabel}/a.jpg → ${destLabel}/a.jpg`}
+                  />
+                  <LayoutChoice
+                    active={f.subfolder}
+                    onClick={() => patch({ subfolder: true })}
+                    icon={FolderTree}
+                    title={`As a folder “${baseName(f.source)}” inside destination`}
+                    example={`${srcLabel}/a.jpg → ${destLabel}/${baseName(f.source)}/a.jpg`}
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="bg-muted/40 grid gap-1 rounded-lg border p-3 font-mono text-xs">
+              <div className="flex min-w-0 gap-2">
+                <span className="text-muted-foreground w-12 shrink-0 font-sans">From</span>
+                <span className="break-all">
+                  {srcLabel}
+                  {f.mode !== "snapshot" && !f.subfolder ? "/*" : ""}
+                </span>
+              </div>
+              <ArrowDown className="text-muted-foreground ml-14 size-3.5" />
+              <div className="flex min-w-0 gap-2">
+                <span className="text-muted-foreground w-12 shrink-0 font-sans">To</span>
+                <span className="break-all">{targetLabel}/</span>
+              </div>
+              {f.mode === "mirror" && (
+                <p className="text-warning mt-1 flex items-start gap-1.5 font-sans">
+                  <AlertTriangle className="mt-px size-3.5 shrink-0" />
+                  Files in {targetLabel}/ that are not in the source will be deleted
+                  {!f.subfolder && " — including anything else already in the destination"}.
+                </p>
               )}
             </div>
 
@@ -309,10 +380,16 @@ export function BackupDialog({ source, onClose }: { source: BackupSource; onClos
                 <Label htmlFor="rescan">Index the copy in the destination folder afterwards</Label>
               </div>
             )}
-            <p className="bg-muted break-all rounded p-2 font-mono text-xs">
-              {label(f.source)} → {label(f.dest).replace(/\/$/, "")}/{baseName(f.source)}
-              {f.mode === "snapshot" ? `-<timestamp>${f.zip ? ".zip" : ""}` : ""}
-            </p>
+            <HookEditor
+              kind="pre"
+              value={f.pre}
+              onChange={(pre) => patch({ pre })}
+            />
+            <HookEditor
+              kind="post"
+              value={f.post}
+              onChange={(post) => patch({ post })}
+            />
           </div>
         )}
         <DialogFooter>
@@ -325,5 +402,37 @@ export function BackupDialog({ source, onClose }: { source: BackupSource; onClos
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function LayoutChoice({
+  active,
+  onClick,
+  icon: Icon,
+  title,
+  example,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+  example: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={cn(
+        "grid min-w-0 gap-1 rounded-lg border p-3 text-left text-sm transition-colors",
+        active ? "border-primary bg-primary/5 ring-primary ring-1" : "hover:bg-muted/60",
+      )}
+    >
+      <span className="flex items-center gap-2 font-medium">
+        <Icon className={cn("size-4 shrink-0", active ? "text-primary" : "text-muted-foreground")} />
+        <span className="truncate">{title}</span>
+      </span>
+      <span className="text-muted-foreground break-all font-mono text-xs">{example}</span>
+    </button>
   );
 }

@@ -7,7 +7,7 @@ import { useSearchParams } from "next/navigation";
 import { Suspense, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Trash2 } from "lucide-react";
+import { Plus, Trash2, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -22,7 +22,6 @@ import {
 } from "@/components/ui/select";
 import { DeleteConfirm } from "@/components/explorer/delete-confirm";
 import { FileNameCell } from "@/components/explorer/file-name-cell";
-import { FolderSelect } from "@/components/explorer/folder-select";
 import { useFolders } from "@/components/explorer/use-folders";
 import { findDuplicates } from "@/lib/actions/files";
 import { startHashing } from "@/lib/actions/folders";
@@ -45,23 +44,38 @@ const MODES: { value: DuplicateMode; label: string; hint: string }[] = [
 
 type KeepRule = "oldest" | "newest" | "shortest";
 
+/** a location to compare: a data folder, optionally narrowed to a sub path */
+type Loc = { key: number; folderId: string; dir: string };
+let nextKey = 1;
+
 function DuplicatesExplorer() {
   const sp = useSearchParams();
   const qc = useQueryClient();
-  const [folderId, setFolderId] = useState<string | undefined>(
-    sp.get("folder") || undefined,
-  );
+  const [locs, setLocs] = useState<Loc[]>(() => {
+    const f = sp.get("folder");
+    return f ? [{ key: nextKey++, folderId: f, dir: "" }] : [];
+  });
+  const [across, setAcross] = useState(false);
   const [mode, setMode] = useState<DuplicateMode>("name-size");
   const [minSizeKb, setMinSizeKb] = useState("0");
-  const [dir, setDir] = useState("");
   const [selected, setSelected] = useState<Record<string, ExploreFile>>({});
   const { data: folders } = useFolders();
 
+  const scopes = locs.filter((l) => l.folderId).map((l) => ({ folderId: l.folderId, dir: l.dir.trim() }));
   const params = {
-    folderIds: folderId ? [folderId] : undefined,
+    scopes: scopes.length ? scopes : undefined,
+    acrossScopes: across && scopes.length > 1,
     mode,
-    dir,
     minSize: Math.max(1, Math.round(Number(minSizeKb || 0) * 1024)),
+  };
+  const updateLocs = (fn: (l: Loc[]) => Loc[]) => {
+    setLocs(fn);
+    setSelected({});
+  };
+  const addLoc = () => {
+    const used = new Set(locs.map((l) => l.folderId));
+    const folderId = folders?.find((f) => !used.has(f.id))?.id ?? folders?.[0]?.id ?? "";
+    updateLocs((l) => [...l, { key: nextKey++, folderId, dir: "" }]);
   };
   const { data, isFetching, error } = useQuery({
     queryKey: ["duplicates", params],
@@ -70,7 +84,7 @@ function DuplicatesExplorer() {
 
   const hashing = useMutation({
     mutationFn: async () => {
-      const ids = folderId ? [folderId] : (folders ?? []).map((f) => f.id);
+      const ids = scopes.length ? [...new Set(scopes.map((s) => s.folderId))] : (folders ?? []).map((f) => f.id);
       for (const id of ids) await startHashing(id);
     },
     onSuccess: () => {
@@ -111,11 +125,71 @@ function DuplicatesExplorer() {
   return (
     <Page className="space-y-6">
       <PageHeader icon={Copy} title="Duplicates" description="Find copies by name, size or content hash and reclaim wasted space." />
-      <div className="flex flex-wrap items-end gap-3">
-        <div className="grid gap-1">
-          <Label className="text-xs">Folder</Label>
-          <FolderSelect value={folderId} onChange={(v) => (setFolderId(v), setSelected({}))} />
+      <div className="grid gap-2 rounded-md border p-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <Label className="text-xs">Compare</Label>
+          <span className="text-muted-foreground text-xs">
+            {locs.length === 0
+              ? "All folders"
+              : `${locs.length} location${locs.length > 1 ? "s" : ""}`}
+          </span>
+          <span className="grow" />
+          {locs.length > 1 && (
+            <label className="flex items-center gap-2 text-xs">
+              <Checkbox checked={across} onCheckedChange={(v) => (setAcross(!!v), setSelected({}))} />
+              Only files that exist in 2+ of these locations
+            </label>
+          )}
         </div>
+        {locs.map((l) => (
+          <div key={l.key} className="flex flex-wrap items-center gap-2">
+            <Select
+              value={l.folderId}
+              onValueChange={(folderId) =>
+                updateLocs((ls) => ls.map((x) => (x.key === l.key ? { ...x, folderId } : x)))
+              }
+            >
+              <SelectTrigger className="w-56">
+                <SelectValue placeholder="Pick a folder" />
+              </SelectTrigger>
+              <SelectContent>
+                {folders?.map((f) => (
+                  <SelectItem key={f.id} value={f.id}>
+                    {f.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <span className="text-muted-foreground text-sm">/</span>
+            <Input
+              className="w-60"
+              placeholder="sub path (optional), e.g. Movies/2020"
+              value={l.dir}
+              onChange={(e) => updateLocs((ls) => ls.map((x) => (x.key === l.key ? { ...x, dir: e.target.value } : x)))}
+            />
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-8"
+              title="Remove location"
+              onClick={() => updateLocs((ls) => ls.filter((x) => x.key !== l.key))}
+            >
+              <X className="size-4" />
+            </Button>
+          </div>
+        ))}
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" variant="outline" onClick={addLoc} disabled={!folders?.length}>
+            <Plus className="size-4" /> Add folder
+          </Button>
+          {locs.length > 0 && (
+            <Button size="sm" variant="ghost" onClick={() => updateLocs(() => [])}>
+              Use all folders
+            </Button>
+          )}
+        </div>
+      </div>
+      <div className="flex flex-wrap items-end gap-3">
         <div className="grid gap-1">
           <Label className="text-xs">Match by</Label>
           <Select value={mode} onValueChange={(v) => (setMode(v as DuplicateMode), setSelected({}))}>
@@ -130,16 +204,6 @@ function DuplicatesExplorer() {
               ))}
             </SelectContent>
           </Select>
-        </div>
-        <div className="grid gap-1">
-          <Label className="text-xs">Within sub path</Label>
-          <Input
-            className="w-48"
-            placeholder="e.g. Movies/2020"
-            value={dir}
-            onChange={(e) => setDir(e.target.value)}
-            disabled={!folderId}
-          />
         </div>
         <div className="grid gap-1">
           <Label className="text-xs">Min size (KB)</Label>

@@ -57,6 +57,8 @@ type SearchFilesResult = {
 
 type DuplicateMode = "name-size" | "similar-name-size" | "name" | "content";
 
+type DuplicateScope = { folderId: string; dir?: string };
+
 type DuplicateGroup = {
   key: string;
   size: number;
@@ -149,6 +151,20 @@ type BackupSchedule = {
   weekday: number;
 };
 
+type BackupHook = {
+  scriptId: string;
+  /** remote ids, or "local" for the hexplorer host */
+  targets: string[];
+  /** values by parameter name; secret values are never sent back (see secretsSet) */
+  params: Record<string, string>;
+  /** read only: secret parameters that have a stored value (leave empty to keep it) */
+  secretsSet?: string[];
+  /** read only: script name for display */
+  scriptName?: string;
+  abortOnFail?: boolean;
+  when?: "always" | "success" | "failure";
+};
+
 type BackupInput = {
   id?: string;
   name?: string;
@@ -159,6 +175,9 @@ type BackupInput = {
   rescanDest?: boolean;
   keep?: number | null;
   archive?: "zip" | null;
+  intoSubfolder?: boolean;
+  preScript?: BackupHook | null;
+  postScript?: BackupHook | null;
   schedule?: BackupSchedule | null;
 };
 
@@ -175,6 +194,11 @@ type BackupJob = {
   rescanDest: boolean;
   keep: number | null;
   archive: "zip" | null;
+  intoSubfolder: boolean;
+  /** where the copy lands, e.g. "nas:/backups/Photos" or "Disk/backups/Photos-<timestamp>" */
+  targetLabel: string;
+  preScript: BackupHook | null;
+  postScript: BackupHook | null;
   schedule: BackupSchedule | null;
   nextRunAt: string | null;
   status: "idle" | "running" | "error" | "warning" | "success";
